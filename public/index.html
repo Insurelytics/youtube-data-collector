@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YouTube Data Viewer</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>YouTube Data Viewer</h1>
+      <div class="actions">
+        <button id="syncBtn">Sync last 120 days</button>
+        <input id="search" type="search" placeholder="Search title/description…" />
+        <select id="sort">
+          <option value="date" selected>Sort by date</option>
+          <option value="views">Sort by views</option>
+          <option value="likes">Sort by likes</option>
+          <option value="comments">Sort by comments</option>
+        </select>
+        <select id="order">
+          <option value="desc" selected>Desc</option>
+          <option value="asc">Asc</option>
+        </select>
+      </div>
+    </header>
+
+    <main>
+      <table>
+        <thead>
+          <tr>
+            <th>Video</th>
+            <th>Published</th>
+            <th>Duration</th>
+            <th>Views</th>
+            <th>Likes</th>
+            <th>Comments</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+
+      <div class="pager">
+        <button id="prev">Prev</button>
+        <span id="pageInfo"></span>
+        <button id="next">Next</button>
+      </div>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+  </html>
+
+

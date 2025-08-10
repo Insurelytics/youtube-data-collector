@@ -45,12 +45,23 @@ export function ensureDatabase() {
 
 export function upsertChannel(channel) {
   ensureDatabase();
+  // Migrate schema if needed
+  try { db.exec('ALTER TABLE channels ADD COLUMN subscriberCount INTEGER'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN isActive INTEGER DEFAULT 1'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN thumbnailUrl TEXT'); } catch {}
+
   const stmt = db.prepare(`
-    INSERT INTO channels (id, title, handle)
-    VALUES (@id, @title, @handle)
-    ON CONFLICT(id) DO UPDATE SET title=excluded.title, handle=excluded.handle
+    INSERT INTO channels (id, title, handle, subscriberCount, isActive, thumbnailUrl)
+    VALUES (@id, @title, @handle, @subscriberCount, COALESCE(@isActive, 1), @thumbnailUrl)
+    ON CONFLICT(id) DO UPDATE SET
+      title=excluded.title,
+      handle=excluded.handle,
+      subscriberCount=COALESCE(excluded.subscriberCount, channels.subscriberCount),
+      isActive=COALESCE(excluded.isActive, channels.isActive),
+      thumbnailUrl=COALESCE(excluded.thumbnailUrl, channels.thumbnailUrl)
   `);
-  stmt.run(channel);
+  const withDefaults = { subscriberCount: null, isActive: 1, thumbnailUrl: null, ...channel };
+  stmt.run(withDefaults);
 }
 
 export function upsertVideos(videos) {
@@ -114,6 +125,7 @@ export function queryVideos({ search, sort, order, page, pageSize }) {
   if (sort === 'views') sortColumn = 'viewCount';
   if (sort === 'likes') sortColumn = 'likeCount';
   if (sort === 'comments') sortColumn = 'commentCount';
+  const sortEngagementExpr = 'COALESCE(viewCount,0) * (COALESCE(durationSeconds,0) / 60.0) + 150*COALESCE(likeCount,0) + 500*COALESCE(commentCount,0)';
 
   const orderSql = order?.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
 
@@ -121,13 +133,126 @@ export function queryVideos({ search, sort, order, page, pageSize }) {
   const offset = (page - 1) * pageSize;
   const rows = db.prepare(`
     SELECT id, channelId, title, description, publishedAt, durationSeconds,
-           viewCount, likeCount, commentCount, thumbnails
+           viewCount, likeCount, commentCount, thumbnails,
+           ${sortEngagementExpr} AS engagement
     FROM videos
     ${whereSql}
-    ORDER BY ${sortColumn} ${orderSql}
+    ORDER BY ${sort === 'engagement' ? sortEngagementExpr : sortColumn} ${orderSql}
     LIMIT :limit OFFSET :offset
   `).all({ ...params, limit: pageSize, offset });
 
+  return { total, rows };
+}
+
+export function listChannels() {
+  ensureDatabase();
+  try { db.exec('ALTER TABLE channels ADD COLUMN subscriberCount INTEGER'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN isActive INTEGER DEFAULT 1'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN thumbnailUrl TEXT'); } catch {}
+  const rows = db.prepare(`
+    SELECT c.id, c.title, c.handle, COALESCE(c.subscriberCount, 0) AS subscriberCount,
+           COALESCE(c.isActive, 1) AS isActive,
+           c.thumbnailUrl AS thumbnailUrl,
+           (SELECT MAX(lastSyncedAt) FROM videos v WHERE v.channelId = c.id) AS lastSyncedAt,
+           (SELECT COUNT(1) FROM videos v WHERE v.channelId = c.id) AS videoCount,
+           (SELECT SUM(COALESCE(viewCount,0)) FROM videos v WHERE v.channelId = c.id) AS totalViews,
+           (SELECT AVG(COALESCE(viewCount,0)) FROM videos v WHERE v.channelId = c.id) AS avgViews
+    FROM channels c
+    ORDER BY c.title COLLATE NOCASE
+  `).all();
+  return rows;
+}
+
+export function removeChannel(id) {
+  ensureDatabase();
+  try { db.exec('ALTER TABLE channels ADD COLUMN isActive INTEGER DEFAULT 1'); } catch {}
+  db.prepare('UPDATE channels SET isActive = 0 WHERE id = ?').run(id);
+}
+
+export function getChannel(id) {
+  ensureDatabase();
+  try { db.exec('ALTER TABLE channels ADD COLUMN subscriberCount INTEGER'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN isActive INTEGER DEFAULT 1'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN thumbnailUrl TEXT'); } catch {}
+  return db.prepare(`
+    SELECT c.id, c.title, c.handle,
+           COALESCE(c.subscriberCount,0) AS subscriberCount,
+           COALESCE(c.isActive,1) AS isActive,
+           c.thumbnailUrl AS thumbnailUrl,
+           (SELECT MAX(lastSyncedAt) FROM videos v WHERE v.channelId = c.id) AS lastSyncedAt,
+           COALESCE((SELECT COUNT(1) FROM videos v WHERE v.channelId = c.id), 0) AS videoCount,
+           COALESCE((SELECT SUM(COALESCE(viewCount,0)) FROM videos v WHERE v.channelId = c.id), 0) AS totalViews
+    FROM channels c
+    WHERE c.id = ?
+  `).get(id);
+}
+
+export function getChannelTrends({ channelId, sinceIso }) {
+  ensureDatabase();
+  const rows = db.prepare(`
+    SELECT date(publishedAt) AS day,
+           SUM(COALESCE(viewCount,0)) AS views,
+           SUM(COALESCE(likeCount,0)) AS likes,
+           SUM(COALESCE(commentCount,0)) AS comments,
+           COUNT(1) AS videos
+    FROM videos
+    WHERE channelId = :channelId AND publishedAt >= :sinceIso
+    GROUP BY day
+    ORDER BY day ASC
+  `).all({ channelId, sinceIso });
+  return rows;
+}
+
+export function getTopVideos({ channelId, sinceIso }) {
+  ensureDatabase();
+  const where = `WHERE channelId = :channelId AND publishedAt >= :sinceIso`;
+  const views = db.prepare(`
+    SELECT id, title, viewCount, likeCount, commentCount, publishedAt, thumbnails
+    FROM videos
+    ${where}
+    ORDER BY COALESCE(viewCount,0) DESC
+    LIMIT 5
+  `).all({ channelId, sinceIso });
+  const likes = db.prepare(`SELECT id, title, likeCount FROM videos ${where} ORDER BY COALESCE(likeCount,0) DESC LIMIT 5`).all({ channelId, sinceIso });
+  const comments = db.prepare(`SELECT id, title, commentCount FROM videos ${where} ORDER BY COALESCE(commentCount,0) DESC LIMIT 5`).all({ channelId, sinceIso });
+  return { views, likes, comments };
+}
+
+export function getSpecialVideos({ channelId, subscriberCount, sinceIso }) {
+  ensureDatabase();
+  const rows = db.prepare(`
+    SELECT id, title, viewCount, likeCount, commentCount, publishedAt, thumbnails
+    FROM videos
+    WHERE channelId = :channelId AND publishedAt >= :sinceIso AND COALESCE(viewCount,0) >= :threshold
+    ORDER BY COALESCE(viewCount,0) DESC
+  `).all({ channelId, sinceIso, threshold: 5 * (subscriberCount || 0) });
+  return rows;
+}
+
+export function queryVideosAdvanced({ sinceIso, channelId, sort, order, page, pageSize }) {
+  ensureDatabase();
+  const clauses = [];
+  const params = {};
+  if (sinceIso) { clauses.push('publishedAt >= :sinceIso'); params.sinceIso = sinceIso; }
+  if (channelId) { clauses.push('channelId = :channelId'); params.channelId = channelId; }
+  const whereSql = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  const orderSql = order?.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+  const engagement = 'COALESCE(viewCount,0) * (COALESCE(durationSeconds,0) / 60.0) + 150*COALESCE(likeCount,0) + 500*COALESCE(commentCount,0)';
+  let sortExpr = 'publishedAt';
+  if (sort === 'engagement') sortExpr = engagement;
+  if (sort === 'views') sortExpr = 'viewCount';
+  if (sort === 'likes') sortExpr = 'likeCount';
+  if (sort === 'comments') sortExpr = 'commentCount';
+  const total = db.prepare(`SELECT COUNT(*) as c FROM videos ${whereSql}`).get(params).c;
+  const offset = (page - 1) * pageSize;
+  const rows = db.prepare(`
+    SELECT id, channelId, title, description, publishedAt, durationSeconds,
+           viewCount, likeCount, commentCount, thumbnails, ${engagement} AS engagement
+    FROM videos
+    ${whereSql}
+    ORDER BY ${sortExpr} ${orderSql}
+    LIMIT :limit OFFSET :offset
+  `).all({ ...params, limit: pageSize, offset });
   return { total, rows };
 }
 

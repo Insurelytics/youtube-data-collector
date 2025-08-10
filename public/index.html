@@ -7,44 +7,131 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <header>
-      <h1>YouTube Data Viewer</h1>
-      <div class="actions">
-        <button id="syncBtn">Sync last 120 days</button>
-        <input id="search" type="search" placeholder="Search title/description…" />
-        <select id="sort">
-          <option value="date" selected>Sort by date</option>
-          <option value="views">Sort by views</option>
-          <option value="likes">Sort by likes</option>
-          <option value="comments">Sort by comments</option>
-        </select>
-        <select id="order">
-          <option value="desc" selected>Desc</option>
-          <option value="asc">Asc</option>
-        </select>
+    <header class="site-header">
+      <div class="container header-inner">
+        <div class="brand">
+          <div class="logo">▶</div>
+          <div class="titles">
+            <h1>YouTube Data Viewer</h1>
+            <p class="subtitle">Track channels and explore recent videos</p>
+          </div>
+        </div>
+        <nav class="tabs">
+          <button data-tab="channels" class="active">Channels</button>
+          <button data-tab="engagement">Top Performing (120d)</button>
+          <button data-tab="videos">All Videos</button>
+        </nav>
       </div>
     </header>
 
-    <main>
-      <table>
-        <thead>
-          <tr>
-            <th>Video</th>
-            <th>Published</th>
-            <th>Duration</th>
-            <th>Views</th>
-            <th>Likes</th>
-            <th>Comments</th>
-          </tr>
-        </thead>
-        <tbody id="rows"></tbody>
-      </table>
+    <main class="container">
+      <section id="tab-channels" class="tab active fade-up">
+        <div class="card">
+          <div class="card-header">
+            <h2>Manage Channels</h2>
+            <p>Add channels by handle and sync their recent videos.</p>
+          </div>
+          <div class="card-actions row">
+            <input id="newHandle" placeholder="Add channel handle, e.g. @ThePrimeTimeagen" />
+            <button id="addChannel" class="btn primary">Add</button>
+            <button id="syncBtn" class="btn">Sync all active</button>
+          </div>
+          <div class="card-body">
+            <table id="channelsTable" class="table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Handle</th>
+                  <th>Subscribers</th>
+                  <th>Videos</th>
+                  <th>Last Sync</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="channelsRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
 
-      <div class="pager">
-        <button id="prev">Prev</button>
-        <span id="pageInfo"></span>
-        <button id="next">Next</button>
-      </div>
+      <section id="tab-engagement" class="tab fade-up">
+        <div class="card">
+          <div class="card-header">
+            <h2>Top Performing (last 120 days)</h2>
+            <p>Ordered by engagement, but we hide the numeric score for a cleaner view.</p>
+          </div>
+          <div class="card-actions row">
+            <label>Order
+              <select id="engOrder">
+                <option value="desc" selected>Desc</option>
+                <option value="asc">Asc</option>
+              </select>
+            </label>
+          </div>
+          <div class="card-body">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Video</th>
+                  <th>Published</th>
+                  <th>Duration</th>
+                  <th>Views</th>
+                  <th>Likes</th>
+                  <th>Comments</th>
+                </tr>
+              </thead>
+              <tbody id="engRows"></tbody>
+            </table>
+            <div class="pager">
+              <button id="engPrev" class="btn">Prev</button>
+              <span id="engPageInfo"></span>
+              <button id="engNext" class="btn">Next</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-videos" class="tab fade-up">
+        <div class="card">
+          <div class="card-header">
+            <h2>All Videos</h2>
+            <p>Search and sort the recent video library.</p>
+          </div>
+          <div class="card-actions row">
+            <input id="search" type="search" placeholder="Search title/description…" />
+            <select id="sort">
+              <option value="date" selected>Sort by date</option>
+              <option value="views">Sort by views</option>
+              <option value="likes">Sort by likes</option>
+              <option value="comments">Sort by comments</option>
+            </select>
+            <select id="order">
+              <option value="desc" selected>Desc</option>
+              <option value="asc">Asc</option>
+            </select>
+          </div>
+          <div class="card-body">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Video</th>
+                  <th>Published</th>
+                  <th>Duration</th>
+                  <th>Views</th>
+                  <th>Likes</th>
+                  <th>Comments</th>
+                </tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+            <div class="pager">
+              <button id="prev" class="btn">Prev</button>
+              <span id="pageInfo"></span>
+              <button id="next" class="btn">Next</button>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
 
     <script src="/app.js" type="module"></script>

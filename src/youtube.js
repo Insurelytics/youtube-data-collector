@@ -14,10 +14,17 @@ export async function getChannelByHandle({ apiKey, handle }) {
   const data = await res.json();
   const item = data.items?.[0];
   if (!item) throw new Error(`Channel not found for handle ${handle}`);
-  return {
-    channelId: item.snippet?.channelId || item.id?.channelId,
-    channelTitle: item.snippet?.channelTitle || handle,
-  };
+  const channelId = item.snippet?.channelId || item.id?.channelId;
+  const channelTitle = item.snippet?.channelTitle || handle;
+  // fetch snippet + stats for subscribers and thumbnail
+  const detailsUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${channelId}&key=${apiKey}`;
+  const res2 = await doFetch(detailsUrl);
+  if (!res2.ok) throw new Error(`YouTube channels failed: ${res2.status}`);
+  const d2 = await res2.json();
+  const subs = d2.items?.[0]?.statistics?.subscriberCount != null ? Number(d2.items[0].statistics.subscriberCount) : null;
+  const tn = d2.items?.[0]?.snippet?.thumbnails || null;
+  const thumbnailUrl = tn?.default?.url || tn?.medium?.url || tn?.high?.url || null;
+  return { channelId, channelTitle, subscriberCount: subs, thumbnailUrl };
 }
 
 export async function listChannelVideoIdsSince({ apiKey, channelId, sinceIso }) {
@@ -84,7 +91,7 @@ function parseISODurationToSeconds(iso) {
 export async function syncChannelVideos({ apiKey, handle, sinceDays }) {
   const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
   const sinceIso = since.toISOString();
-  const { channelId, channelTitle } = await getChannelByHandle({ apiKey, handle });
+  const { channelId, channelTitle, subscriberCount, thumbnailUrl } = await getChannelByHandle({ apiKey, handle });
   const ids = await listChannelVideoIdsSince({ apiKey, channelId, sinceIso });
   if (ids.length === 0) return { channelId, channelTitle, videos: [] };
   const details = await getVideoDetails({ apiKey, videoIds: ids });
@@ -102,7 +109,7 @@ export async function syncChannelVideos({ apiKey, handle, sinceDays }) {
     thumbnails: d.snippet?.thumbnails || null,
     raw: d,
   }));
-  return { channelId, channelTitle, videos };
+  return { channelId, channelTitle, subscriberCount, thumbnailUrl, videos };
 }
 
 

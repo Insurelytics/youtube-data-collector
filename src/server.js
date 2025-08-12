@@ -100,7 +100,8 @@ function createServer() {
       const channelId = req.params.id;
       const ch = getChannel(channelId);
       if (!ch) return res.status(404).json({ error: 'not found' });
-      const sinceIso = new Date(Date.now() - DEFAULT_DAYS * 24 * 60 * 60 * 1000).toISOString();
+      const days = Number(req.query.days || DEFAULT_DAYS);
+      const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
       const trends = getChannelTrends({ channelId, sinceIso });
       const top = getTopVideos({ channelId, sinceIso });
       const special = getSpecialVideos({ channelId, subscriberCount: ch.subscriberCount, sinceIso });
@@ -112,7 +113,8 @@ function createServer() {
 
   // Engagement ordered videos (global or per channel)
   app.get('/api/videos/engagement', (req, res) => {
-    const sinceIso = new Date(Date.now() - DEFAULT_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    const days = Number(req.query.days || DEFAULT_DAYS);
+    const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
     const channelId = req.query.channelId ? req.query.channelId.toString() : undefined;
     const page = Number(req.query.page || 1);
     const pageSize = Math.min(200, Number(req.query.pageSize || 50));

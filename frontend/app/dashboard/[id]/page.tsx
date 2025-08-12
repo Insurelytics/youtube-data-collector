@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { ArrowLeft, Users, Eye, MessageCircle, Heart, TrendingUp, Calendar, Play, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Users, Eye, MessageCircle, Heart, TrendingUp, Calendar, Play, ExternalLink, Clock } from 'lucide-react'
 import Link from "next/link"
 import { useParams } from "next/navigation"
 
@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 function formatNumber(num: number) {
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
@@ -35,6 +36,23 @@ function thumbUrlFrom(thumbnails: any): string {
   }
 }
 
+// Time range options with their corresponding days
+const TIME_RANGES = [
+  { label: "7 days", value: "7", days: 7 },
+  { label: "30 days", value: "30", days: 30 },
+  { label: "90 days", value: "90", days: 90 },
+  { label: "6 months", value: "180", days: 180 },
+  { label: "1 year", value: "365", days: 365 },
+  { label: "All time", value: "36500", days: 36500 }
+]
+
+function getInitialTimeRange(): string {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('youtube-dashboard-timerange') || '90'
+  }
+  return '90'
+}
+
 export default function ChannelDashboard() {
   const params = useParams<{ id: string }>()
   const id = params?.id as string
@@ -44,12 +62,20 @@ export default function ChannelDashboard() {
   const [top, setTop] = useState<{views:any[];likes:any[];comments:any[]}>({views:[],likes:[],comments:[]})
   const [special, setSpecial] = useState<any[]>([])
   const [recent, setRecent] = useState<any[]>([])
+  const [timeRange, setTimeRange] = useState<string>(getInitialTimeRange())
+
+  const handleTimeRangeChange = (value: string) => {
+    setTimeRange(value)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('youtube-dashboard-timerange', value)
+    }
+  }
 
   useEffect(() => {
     let mounted = true
     ;(async () => {
       try {
-        const res = await fetch(`/api/channels/${id}/dashboard`)
+        const res = await fetch(`/api/channels/${id}/dashboard?days=${timeRange}`)
         const data = await res.json()
         if (!res.ok) throw new Error(data?.error || 'failed')
         if (!mounted) return
@@ -63,13 +89,13 @@ export default function ChannelDashboard() {
     })()
 
     ;(async () => {
-      const res = await fetch(`/api/videos/engagement?channelId=${encodeURIComponent(id)}`)
+      const res = await fetch(`/api/videos/engagement?channelId=${encodeURIComponent(id)}&days=${timeRange}`)
       const d = await res.json()
       setRecent(Array.isArray(d?.rows) ? d.rows : [])
     })()
 
     return () => { mounted = false }
-  }, [id])
+  }, [id, timeRange])
 
   if (loading) return (
     <div className="min-h-screen bg-background"><div className="container mx-auto p-6">Loading…</div></div>
@@ -132,18 +158,37 @@ export default function ChannelDashboard() {
 
         {/* Analytics Tabs */}
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="viral">Viral Videos</TabsTrigger>
-            <TabsTrigger value="recent">Recent (120d)</TabsTrigger>
-          </TabsList>
+          <div className="flex items-center justify-between">
+            <TabsList className="grid grid-cols-3">
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="viral">Viral Videos</TabsTrigger>
+              <TabsTrigger value="recent">Recent</TabsTrigger>
+            </TabsList>
+            
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Time Range:</span>
+              <Select value={timeRange} onValueChange={handleTimeRangeChange}>
+                <SelectTrigger className="w-32">
+                  <SelectValue placeholder="Select time range" />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIME_RANGES.map((range) => (
+                    <SelectItem key={range.value} value={range.value}>
+                      {range.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
 
           <TabsContent value="overview" className="space-y-6">
             {/* Top Performing Videos */}
             <Card>
               <CardHeader>
                 <CardTitle>Top Performing Videos</CardTitle>
-                <CardDescription>Videos with highest engagement scores</CardDescription>
+                <CardDescription>Videos with highest engagement scores from the selected time period</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -194,7 +239,7 @@ export default function ChannelDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle>Viral Videos</CardTitle>
-                <CardDescription>Videos with 5x+ more views than subscriber count</CardDescription>
+                <CardDescription>Videos with 5x+ more views than subscriber count from the selected time period</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -247,8 +292,8 @@ export default function ChannelDashboard() {
           <TabsContent value="recent" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Recent Videos (Past 120 Days)</CardTitle>
-                <CardDescription>All videos from the last 4 months, ordered by engagement</CardDescription>
+                <CardTitle>Recent Videos ({TIME_RANGES.find(r => r.value === timeRange)?.label || `${timeRange} days`})</CardTitle>
+                <CardDescription>All videos from the selected time period, ordered by engagement</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>

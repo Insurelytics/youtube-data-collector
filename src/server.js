@@ -4,7 +4,7 @@ dotenv.config();
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ensureDatabase, upsertVideos, queryVideos, upsertChannel, listChannels, removeChannel, getChannel, getChannelTrends, getTopVideos, getSpecialVideos, queryVideosAdvanced } from './storage.js';
+import { ensureDatabase, upsertVideos, queryVideos, upsertChannel, listChannels, removeChannel, getChannel, getChannelTrends, getTopVideos, getSpecialVideos, getViralVideoCount, queryVideosAdvanced } from './storage.js';
 import { syncChannelVideos, getChannelByHandle } from './youtube.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -55,7 +55,7 @@ function createServer() {
   });
 
   // Channels CRUD
-  app.get('/api/channels', async (_req, res) => {
+  app.get('/api/channels', async (req, res) => {
     try {
       const rows = listChannels();
       const apiKey = process.env.API_KEY;
@@ -68,7 +68,23 @@ function createServer() {
           } catch {}
         }
       }
-      res.json({ rows: listChannels() });
+      
+      // Add viral video counts to each channel
+      const viralMultiplier = Number(req.query.viralMultiplier || 5);
+      const days = Number(req.query.days || DEFAULT_DAYS);
+      const sinceIso = days < DEFAULT_DAYS ? new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString() : undefined;
+      
+      const channelsWithViralCounts = listChannels().map(channel => ({
+        ...channel,
+        viralVideoCount: getViralVideoCount({ 
+          channelId: channel.id, 
+          subscriberCount: channel.subscriberCount, 
+          viralMultiplier,
+          sinceIso
+        })
+      }));
+      
+      res.json({ rows: channelsWithViralCounts });
     } catch (e) {
       res.json({ rows: listChannels() });
     }
@@ -101,10 +117,13 @@ function createServer() {
       const ch = getChannel(channelId);
       if (!ch) return res.status(404).json({ error: 'not found' });
       const days = Number(req.query.days || DEFAULT_DAYS);
+      const viralMultiplier = Number(req.query.viralMultiplier || 5);
+      const likeWeight = Number(req.query.likeWeight || 150);
+      const commentWeight = Number(req.query.commentWeight || 500);
       const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
       const trends = getChannelTrends({ channelId, sinceIso });
-      const top = getTopVideos({ channelId, sinceIso });
-      const special = getSpecialVideos({ channelId, subscriberCount: ch.subscriberCount, sinceIso });
+      const top = getTopVideos({ channelId, sinceIso, likeWeight, commentWeight });
+      const special = getSpecialVideos({ channelId, subscriberCount: ch.subscriberCount, sinceIso, viralMultiplier });
       res.json({ channel: ch, trends, top, special });
     } catch (e) {
       res.status(500).json({ error: e?.message || 'dashboard failed' });
@@ -119,7 +138,9 @@ function createServer() {
     const page = Number(req.query.page || 1);
     const pageSize = Math.min(200, Number(req.query.pageSize || 50));
     const order = (req.query.order || 'desc').toString();
-    const { rows, total } = queryVideosAdvanced({ sinceIso, channelId, sort: 'engagement', order, page, pageSize });
+    const likeWeight = Number(req.query.likeWeight || 150);
+    const commentWeight = Number(req.query.commentWeight || 500);
+    const { rows, total } = queryVideosAdvanced({ sinceIso, channelId, sort: 'engagement', order, page, pageSize, likeWeight, commentWeight });
     res.json({ total, page, pageSize, rows });
   });
 

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Plus, Trash2, TrendingUp, Users, Eye, MessageCircle, Heart, ExternalLink, RefreshCcw, Settings, Flame, Clock } from 'lucide-react'
+import { Plus, Trash2, TrendingUp, Users, Eye, MessageCircle, Heart, ExternalLink, RefreshCcw, Settings, Flame, Clock, Camera, Play } from 'lucide-react'
 import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
@@ -12,36 +12,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-
-type UiChannel = {
-  id: string
-  name: string
-  handle: string
-  subscribers: number
-  avatar: string
-  totalVideos: number
-  totalViews: number
-  avgViews: number
-  viralVideos: number
-}
+import { PlatformChannelCard } from "@/components/dashboard/PlatformChannelCard"
+import { Platform, PlatformChannel, AnalyticsCriteria, PLATFORM_CONFIGS } from '@/types/platform'
+import { getPlatformFromUrl, extractHandle } from '@/lib/platform-utils'
 
 function formatNumber(num: number) {
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
   if (num >= 1000) return `${(num / 1000).toFixed(1)}K`
   return num.toFixed(0).toString()
-}
-
-function extractHandle(input: string) {
-  const trimmed = input.trim()
-  if (!trimmed) return ""
-  if (trimmed.startsWith("@")) return trimmed
-  try {
-    const url = new URL(trimmed)
-    const seg = url.pathname.split("/").filter(Boolean).pop() || ""
-    return seg.startsWith("@") ? seg : ""
-  } catch {
-    return ""
-  }
 }
 
 // Time range options with their corresponding days
@@ -54,9 +32,9 @@ const TIME_RANGES = [
   { label: "All time", value: "36500", days: 36500 }
 ]
 
-function getGlobalCriteria() {
+function getGlobalCriteria(): AnalyticsCriteria {
   if (typeof window !== 'undefined') {
-    const stored = localStorage.getItem('youtube-global-criteria')
+    const stored = localStorage.getItem('platform-global-criteria')
     if (stored) {
       try {
         return JSON.parse(stored)
@@ -72,8 +50,9 @@ function getGlobalCriteria() {
 }
 
 export default function HomePage() {
-  const [channels, setChannels] = useState<UiChannel[]>([])
+  const [channels, setChannels] = useState<PlatformChannel[]>([])
   const [newChannelUrl, setNewChannelUrl] = useState("")
+  const [selectedPlatform, setSelectedPlatform] = useState<Platform>('youtube')
   const [loading, setLoading] = useState(false)
   const [criteria, setCriteria] = useState(getGlobalCriteria())
 
@@ -82,22 +61,61 @@ export default function HomePage() {
       viralMultiplier: criteria.viralMultiplier.toString(),
       days: criteria.timeRange
     })
-    const res = await fetch(`/api/channels?${params.toString()}`)
-    const data = await res.json()
-    const rows = Array.isArray(data?.rows) ? data.rows : []
-    const active = rows.filter((r: any) => r.isActive)
-    const mapped: UiChannel[] = active.map((r: any) => ({
-      id: r.id,
-      name: r.title,
-      handle: r.handle || "",
-      subscribers: Number(r.subscriberCount || 0),
-      avatar: r.thumbnailUrl || "/placeholder.svg?height=40&width=40&text=CH",
-      totalVideos: Number(r.videoCount || 0),
-      totalViews: Number(r.totalViews || 0),
-      avgViews: Number(r.avgViews || 0),
-      viralVideos: Number(r.viralVideoCount || 0),
-    }))
-    setChannels(mapped)
+    
+    // Load all platform channels
+    const allChannels: PlatformChannel[] = []
+    
+    // Load YouTube channels
+    try {
+      const res = await fetch(`/api/channels/youtube?${params.toString()}`)
+      const data = await res.json()
+      const rows = Array.isArray(data?.rows) ? data.rows : []
+      const active = rows.filter((r: any) => r.isActive)
+      const youtubeChannels: PlatformChannel[] = active.map((r: any) => ({
+        platform: 'youtube' as const,
+        id: r.id,
+        title: r.title,
+        handle: r.handle || "",
+        subscriberCount: Number(r.subscriberCount || 0),
+        thumbnailUrl: r.thumbnailUrl || "/placeholder.svg",
+        videoCount: Number(r.videoCount || 0),
+        totalViews: Number(r.totalViews || 0),
+        avgViews: Number(r.avgViews || 0),
+        viralVideoCount: Number(r.viralVideoCount || 0),
+        isActive: true,
+        lastSyncedAt: r.lastSyncedAt
+      }))
+      allChannels.push(...youtubeChannels)
+    } catch (e) {
+      console.error('Failed to load YouTube channels:', e)
+    }
+    
+    // Load Instagram profiles
+    try {
+      const res = await fetch(`/api/channels/instagram?${params.toString()}`)
+      const data = await res.json()
+      const rows = Array.isArray(data?.rows) ? data.rows : []
+      const active = rows.filter((r: any) => r.isActive)
+      const instagramProfiles: PlatformChannel[] = active.map((r: any) => ({
+        platform: 'instagram' as const,
+        id: r.id,
+        title: r.title,
+        handle: r.handle || "",
+        followerCount: Number(r.followerCount || 0),
+        thumbnailUrl: r.thumbnailUrl || "/placeholder.svg",
+        postCount: Number(r.postCount || 0),
+        totalLikes: Number(r.totalLikes || 0),
+        avgLikes: Number(r.avgLikes || 0),
+        viralPostCount: Number(r.viralPostCount || 0),
+        isActive: true,
+        lastSyncedAt: r.lastSyncedAt
+      }))
+      allChannels.push(...instagramProfiles)
+    } catch (e) {
+      console.error('Failed to load Instagram profiles:', e)
+    }
+    
+    setChannels(allChannels)
   }
 
   useEffect(() => {
@@ -105,11 +123,18 @@ export default function HomePage() {
   }, [criteria.viralMultiplier, criteria.timeRange])
 
   async function addChannel() {
-    const handle = extractHandle(newChannelUrl)
-    if (!handle) return
+    // Auto-detect platform from URL, fallback to selected platform
+    const detectedPlatform = getPlatformFromUrl(newChannelUrl) || selectedPlatform
+    const handle = extractHandle(newChannelUrl, detectedPlatform)
+    
+    if (!handle) {
+      alert('Invalid URL or handle format')
+      return
+    }
+    
     setLoading(true)
     try {
-      const res = await fetch("/api/channels", {
+      const res = await fetch(`/api/channels/${detectedPlatform}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ handle }),
@@ -128,9 +153,12 @@ export default function HomePage() {
   }
 
   async function removeChannel(id: string) {
+    const channel = channels.find(c => c.id === id)
+    if (!channel) return
+    
     setLoading(true)
     try {
-      await fetch(`/api/channels/${id}`, { method: "DELETE" })
+      await fetch(`/api/channels/${channel.platform}/${id}`, { method: "DELETE" })
       await loadChannels()
     } finally {
       setLoading(false)
@@ -138,10 +166,13 @@ export default function HomePage() {
   }
 
   async function resyncChannel(handle: string) {
+    const channel = channels.find(c => c.handle === handle)
+    if (!channel) return
+    
     setLoading(true)
     try {
       const params = new URLSearchParams({ handle, sinceDays: String(36500) })
-      const res = await fetch(`/api/sync?${params.toString()}`)
+      const res = await fetch(`/api/sync/${channel.platform}?${params.toString()}`)
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         throw new Error(err?.error || 'Re-Sync failed')
@@ -158,7 +189,7 @@ export default function HomePage() {
     const newCriteria = { ...criteria, [field]: value }
     setCriteria(newCriteria)
     if (typeof window !== 'undefined') {
-      localStorage.setItem('youtube-global-criteria', JSON.stringify(newCriteria))
+      localStorage.setItem('platform-global-criteria', JSON.stringify(newCriteria))
     }
   }
 
@@ -166,8 +197,8 @@ export default function HomePage() {
     <div className="min-h-screen bg-background">
       <div className="container mx-auto p-6">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">YouTube Analytics Dashboard</h1>
-          <p className="text-muted-foreground">Track and analyze your favorite YouTube channels</p>
+          <h1 className="text-3xl font-bold mb-2">Multi-Platform Analytics Dashboard</h1>
+          <p className="text-muted-foreground">Track and analyze your favorite YouTube channels and Instagram profiles</p>
         </div>
 
         <Tabs defaultValue="channels" className="space-y-6">
@@ -186,24 +217,51 @@ export default function HomePage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Plus className="h-5 w-5" />
-                  Add New Channel
+                  Add New Channel/Profile
                 </CardTitle>
                 <CardDescription>
-                  Enter a YouTube channel URL or handle to start tracking
+                  Enter a YouTube channel or Instagram profile URL to start tracking
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="https://youtube.com/@channelname or @channelname"
-                    value={newChannelUrl}
-                    onChange={(e) => setNewChannelUrl(e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button onClick={addChannel} disabled={loading}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Channel
-                  </Button>
+                <div className="space-y-4">
+                  <div className="flex gap-2">
+                    <Select value={selectedPlatform} onValueChange={(value: Platform) => setSelectedPlatform(value)}>
+                      <SelectTrigger className="w-40">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="youtube">
+                          <div className="flex items-center gap-2">
+                            <Play className="h-4 w-4" />
+                            YouTube
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="instagram">
+                          <div className="flex items-center gap-2">
+                            <Camera className="h-4 w-4" />
+                            Instagram
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      placeholder={selectedPlatform === 'youtube' 
+                        ? "https://youtube.com/@channelname or @channelname"
+                        : "https://instagram.com/username or @username"
+                      }
+                      value={newChannelUrl}
+                      onChange={(e) => setNewChannelUrl(e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button onClick={addChannel} disabled={loading}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add {selectedPlatform === 'youtube' ? 'Channel' : 'Profile'}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Platform will be auto-detected from URL, or use the dropdown to select manually
+                  </p>
                 </div>
               </CardContent>
             </Card>
@@ -214,73 +272,14 @@ export default function HomePage() {
             </div>
 
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {channels.map((channel) => (
-            <Card key={channel.id} className="relative">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <Avatar>
-                      <AvatarImage src={channel.avatar || "/placeholder.svg"} alt={channel.name} />
-                      <AvatarFallback>{channel.name.slice(0, 2)}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <CardTitle className="text-lg">{channel.name}</CardTitle>
-                      <CardDescription>{channel.handle}</CardDescription>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title="Re-Sync"
-                      onClick={() => channel.handle && resyncChannel(channel.handle)}
-                    >
-                      <RefreshCcw className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeChannel(channel.id)}
-                      className="text-destructive hover:text-destructive"
-                      title="Remove"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4 text-muted-foreground" />
-                    <span>{formatNumber(channel.subscribers)} subs</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Eye className="h-4 w-4 text-muted-foreground" />
-                    <span>{formatNumber(channel.totalViews)} views</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                    <span>{channel.totalVideos} videos synced</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Flame className="h-4 w-4 text-orange-500" />
-                    <span>{channel.viralVideos} viral</span>
-                  </div>
-                </div>
-                <div className="flex justify-center">
-                  <Badge variant="secondary" className="text-xs">
-                    {formatNumber(channel.avgViews)} avg views
-                  </Badge>
-                </div>
-                <Link href={`/dashboard/${channel.id}`}>
-                  <Button className="w-full">
-                    View Dashboard
-                    <ExternalLink className="h-4 w-4 ml-2" />
-                  </Button>
-                </Link>
-              </CardContent>
-            </Card>
+              {channels.map((channel) => (
+                <PlatformChannelCard
+                  key={channel.id}
+                  channel={channel}
+                  onRemove={removeChannel}
+                  onResync={resyncChannel}
+                  loading={loading}
+                />
               ))}
             </div>
 
@@ -290,7 +289,7 @@ export default function HomePage() {
                   <TrendingUp className="h-12 w-12 text-muted-foreground mb-4" />
                   <h3 className="text-lg font-semibold mb-2">No channels tracked yet</h3>
                   <p className="text-muted-foreground text-center">
-                    Add your first YouTube channel to start analyzing performance metrics
+                    Add your first YouTube channel or Instagram profile to start analyzing performance metrics
                   </p>
                 </CardContent>
               </Card>

@@ -60,7 +60,7 @@ export async function syncChannelReels({ handle, sinceDays }) {
       description: item.caption || '',
       publishedAt: item.timestamp || new Date(item.takenAtTimestamp * 1000).toISOString(),
       durationSeconds: null, // Instagram doesn't provide video duration
-      viewCount: null, // Instagram doesn't provide view counts in public API
+      viewCount: item.videoViewCount || null, // Use videoViewCount from Apify
       likeCount: item.likesCount || null,
       commentCount: item.commentsCount || null,
       tags: item.hashtags || null,

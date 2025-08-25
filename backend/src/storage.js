@@ -37,6 +37,7 @@ export function ensureDatabase() {
       platform TEXT DEFAULT 'youtube',
       shortCode TEXT,
       displayUrl TEXT,
+      localImageUrl TEXT,
       videoUrl TEXT,
       dimensions TEXT,
       mentions TEXT,
@@ -66,6 +67,7 @@ export function upsertChannel(channel) {
   try { db.exec('ALTER TABLE videos ADD COLUMN dimensions TEXT'); } catch {}
   try { db.exec('ALTER TABLE videos ADD COLUMN mentions TEXT'); } catch {}
   try { db.exec('ALTER TABLE videos ADD COLUMN takenAtTimestamp INTEGER'); } catch {}
+  try { db.exec('ALTER TABLE videos ADD COLUMN localImageUrl TEXT'); } catch {}
 
   const stmt = db.prepare(`
     INSERT INTO channels (id, title, handle, subscriberCount, isActive, thumbnailUrl, platform)
@@ -89,11 +91,11 @@ export function upsertVideos(videos) {
     INSERT INTO videos (
       id, channelId, title, description, publishedAt, durationSeconds,
       viewCount, likeCount, commentCount, tags, thumbnails, raw, lastSyncedAt,
-      platform, shortCode, displayUrl, videoUrl, dimensions, mentions, takenAtTimestamp
+      platform, shortCode, displayUrl, localImageUrl, videoUrl, dimensions, mentions, takenAtTimestamp
     ) VALUES (
       @id, @channelId, @title, @description, @publishedAt, @durationSeconds,
       @viewCount, @likeCount, @commentCount, @tags, @thumbnails, @raw, @lastSyncedAt,
-      @platform, @shortCode, @displayUrl, @videoUrl, @dimensions, @mentions, @takenAtTimestamp
+      @platform, @shortCode, @displayUrl, @localImageUrl, @videoUrl, @dimensions, @mentions, @takenAtTimestamp
     )
     ON CONFLICT(id) DO UPDATE SET
       title=excluded.title,
@@ -110,6 +112,7 @@ export function upsertVideos(videos) {
       platform=excluded.platform,
       shortCode=excluded.shortCode,
       displayUrl=excluded.displayUrl,
+      localImageUrl=excluded.localImageUrl,
       videoUrl=excluded.videoUrl,
       dimensions=excluded.dimensions,
       mentions=excluded.mentions,
@@ -133,6 +136,7 @@ export function upsertVideos(videos) {
     platform: v.platform || 'youtube',
     shortCode: v.shortCode || null,
     displayUrl: v.displayUrl || null,
+    localImageUrl: v.localImageUrl || null,
     videoUrl: v.videoUrl || null,
     dimensions: v.dimensions ? JSON.stringify(v.dimensions) : null,
     mentions: v.mentions ? JSON.stringify(v.mentions) : null,
@@ -168,6 +172,7 @@ export function queryVideos({ search, sort, order, page, pageSize }) {
   const rows = db.prepare(`
     SELECT id, channelId, title, description, publishedAt, durationSeconds,
            viewCount, likeCount, commentCount, thumbnails,
+           platform, shortCode, displayUrl, localImageUrl,
            ${sortEngagementExpr} AS engagement
     FROM videos
     ${whereSql}
@@ -252,7 +257,8 @@ export function getTopVideos({ channelId, sinceIso, likeWeight = 150, commentWei
   const where = `WHERE channelId = :channelId AND publishedAt >= :sinceIso`;
   const engagement = `COALESCE(viewCount,0) * (COALESCE(durationSeconds,0) / 60.0) + ${likeWeight}*COALESCE(likeCount,0) + ${commentWeight}*COALESCE(commentCount,0)`;
   const views = db.prepare(`
-    SELECT id, title, viewCount, likeCount, commentCount, publishedAt, thumbnails, ${engagement} AS engagement
+    SELECT id, title, viewCount, likeCount, commentCount, publishedAt, thumbnails, 
+           platform, shortCode, displayUrl, localImageUrl, ${engagement} AS engagement
     FROM videos
     ${where}
     ORDER BY ${engagement} DESC
@@ -266,7 +272,8 @@ export function getTopVideos({ channelId, sinceIso, likeWeight = 150, commentWei
 export function getSpecialVideos({ channelId, subscriberCount, sinceIso, viralMultiplier = 5 }) {
   ensureDatabase();
   const rows = db.prepare(`
-    SELECT id, title, viewCount, likeCount, commentCount, publishedAt, thumbnails
+    SELECT id, title, viewCount, likeCount, commentCount, publishedAt, thumbnails,
+           platform, shortCode, displayUrl, localImageUrl
     FROM videos
     WHERE channelId = :channelId AND publishedAt >= :sinceIso AND COALESCE(viewCount,0) >= :threshold
     ORDER BY COALESCE(viewCount,0) DESC
@@ -311,7 +318,8 @@ export function queryVideosAdvanced({ sinceIso, channelId, sort, order, page, pa
   const offset = (page - 1) * pageSize;
   const rows = db.prepare(`
     SELECT id, channelId, title, description, publishedAt, durationSeconds,
-           viewCount, likeCount, commentCount, thumbnails, ${engagement} AS engagement
+           viewCount, likeCount, commentCount, thumbnails, 
+           platform, shortCode, displayUrl, localImageUrl, ${engagement} AS engagement
     FROM videos
     ${whereSql}
     ORDER BY ${sortExpr} ${orderSql}

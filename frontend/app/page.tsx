@@ -38,13 +38,24 @@ function formatNumber(num: number) {
 function extractHandle(input: string): string {
   const trimmed = input.trim()
   if (!trimmed) return ""
+  
+  // Handle @ prefixed usernames
   if (trimmed.startsWith("@")) return trimmed
+  
   try {
     const url = new URL(trimmed)
     const seg = url.pathname.split("/").filter(Boolean).pop() || ""
+    
+    // For Instagram and YouTube URLs, return the username/channel name directly
+    if (url.hostname.includes('instagram.com') || url.hostname.includes('youtube.com') || url.hostname.includes('youtu.be')) {
+      return seg || ""
+    }
+    
+    // For other URLs, only return if it starts with @
     return seg.startsWith("@") ? seg : ""
   } catch {
-    return ""
+    // If not a valid URL, might be a plain username
+    return trimmed.match(/^[a-zA-Z0-9._]+$/) ? trimmed : ""
   }
 }
 

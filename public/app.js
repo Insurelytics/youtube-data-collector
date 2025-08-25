@@ -156,6 +156,15 @@ async function loadChannels() {
 
 function renderChannelDashboard(data) {
   const { channel, trends, top, special } = data;
+  // Get viral multiplier from global criteria or default to 5
+  const criteria = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('youtube-global-criteria') || '{}');
+    } catch {
+      return {};
+    }
+  })();
+  const viralMultiplier = criteria.viralMultiplier || 5;
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
   overlay.innerHTML = `
@@ -190,7 +199,7 @@ function renderChannelDashboard(data) {
           </div>
         </section>
         <section>
-          <h3>Special: 5× Views > Subscribers</h3>
+          <h3>Special: ${viralMultiplier}× Views > Subscribers</h3>
           <ul>${special.map(v=>`<li><a target="_blank" href="https://www.youtube.com/watch?v=${v.id}">${v.title}</a> — ${v.viewCount?.toLocaleString?.() ?? 0} views</li>`).join('')}</ul>
         </section>
       </div>

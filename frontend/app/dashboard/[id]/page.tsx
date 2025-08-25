@@ -13,6 +13,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
+
 function formatNumber(num: number) {
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
   if (num >= 1000) return `${(num / 1000).toFixed(1)}K`
@@ -46,11 +47,21 @@ const TIME_RANGES = [
   { label: "All time", value: "36500", days: 36500 }
 ]
 
-function getInitialTimeRange(): string {
+function getGlobalCriteria() {
   if (typeof window !== 'undefined') {
-    return localStorage.getItem('youtube-dashboard-timerange') || '90'
+    const stored = localStorage.getItem('youtube-global-criteria')
+    if (stored) {
+      try {
+        return JSON.parse(stored)
+      } catch {}
+    }
   }
-  return '90'
+  return {
+    viralMultiplier: 5,
+    commentWeight: 500,
+    likeWeight: 150,
+    timeRange: '90'
+  }
 }
 
 export default function ChannelDashboard() {
@@ -62,20 +73,53 @@ export default function ChannelDashboard() {
   const [top, setTop] = useState<{views:any[];likes:any[];comments:any[]}>({views:[],likes:[],comments:[]})
   const [special, setSpecial] = useState<any[]>([])
   const [recent, setRecent] = useState<any[]>([])
-  const [timeRange, setTimeRange] = useState<string>(getInitialTimeRange())
+  const [criteria, setCriteria] = useState(getGlobalCriteria())
 
-  const handleTimeRangeChange = (value: string) => {
-    setTimeRange(value)
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('youtube-dashboard-timerange', value)
+
+
+  // Update criteria when global criteria changes or on focus
+  useEffect(() => {
+    const handleStorageChange = () => {
+      setCriteria(getGlobalCriteria())
     }
+    const handleFocus = () => {
+      setCriteria(getGlobalCriteria())
+    }
+    window.addEventListener('storage', handleStorageChange)
+    window.addEventListener('focus', handleFocus)
+    // Also check on mount in case criteria changed while on another page
+    setCriteria(getGlobalCriteria())
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [])
+
+  const isViralVideo = (video: any) => {
+    if (!channel?.subscriberCount) return false
+    const subscriberCount = Number(channel.subscriberCount)
+    const viewCount = Number(video.viewCount || 0)
+    return viewCount >= subscriberCount * criteria.viralMultiplier
+  }
+
+  const calculateEngagementScore = (video: any) => {
+    const views = Number(video.viewCount || 0)
+    const comments = Number(video.commentCount || 0) * criteria.commentWeight
+    const likes = Number(video.likeCount || 0) * criteria.likeWeight
+    return views + comments + likes
   }
 
   useEffect(() => {
     let mounted = true
     ;(async () => {
       try {
-        const res = await fetch(`/api/channels/${id}/dashboard?days=${timeRange}`)
+        const params = new URLSearchParams({
+          days: criteria.timeRange,
+          viralMultiplier: criteria.viralMultiplier.toString(),
+          likeWeight: criteria.likeWeight.toString(),
+          commentWeight: criteria.commentWeight.toString()
+        })
+        const res = await fetch(`/api/channels/${id}/dashboard?${params.toString()}`)
         const data = await res.json()
         if (!res.ok) throw new Error(data?.error || 'failed')
         if (!mounted) return
@@ -89,13 +133,19 @@ export default function ChannelDashboard() {
     })()
 
     ;(async () => {
-      const res = await fetch(`/api/videos/engagement?channelId=${encodeURIComponent(id)}&days=${timeRange}`)
+      const params = new URLSearchParams({
+        channelId: id,
+        days: criteria.timeRange,
+        likeWeight: criteria.likeWeight.toString(),
+        commentWeight: criteria.commentWeight.toString()
+      })
+      const res = await fetch(`/api/videos/engagement?${params.toString()}`)
       const d = await res.json()
       setRecent(Array.isArray(d?.rows) ? d.rows : [])
     })()
 
     return () => { mounted = false }
-  }, [id, timeRange])
+  }, [id, criteria])
 
   if (loading) return (
     <div className="min-h-screen bg-background"><div className="container mx-auto p-6">Loading…</div></div>
@@ -165,21 +215,10 @@ export default function ChannelDashboard() {
               <TabsTrigger value="recent">Recent</TabsTrigger>
             </TabsList>
             
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Time Range:</span>
-              <Select value={timeRange} onValueChange={handleTimeRangeChange}>
-                <SelectTrigger className="w-32">
-                  <SelectValue placeholder="Select time range" />
-                </SelectTrigger>
-                <SelectContent>
-                  {TIME_RANGES.map((range) => (
-                    <SelectItem key={range.value} value={range.value}>
-                      {range.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Clock className="h-4 w-4" />
+              <span>Time Range: {TIME_RANGES.find(r => r.value === criteria.timeRange)?.label || 'All time'}</span>
+              <span className="text-xs">(set in global criteria)</span>
             </div>
           </div>
 
@@ -239,7 +278,7 @@ export default function ChannelDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle>Viral Videos</CardTitle>
-                <CardDescription>Videos with 5x+ more views than subscriber count from the selected time period</CardDescription>
+                <CardDescription>Videos with {criteria.viralMultiplier}x+ more views than subscriber count from the selected time period</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -263,7 +302,7 @@ export default function ChannelDashboard() {
                         </h3>
                         <p className="text-sm text-muted-foreground">{formatDate(video.publishedAt)}</p>
                         <Badge variant="destructive" className="mt-1">
-                          5x+ viral multiplier
+                          {criteria.viralMultiplier}x+ viral multiplier
                         </Badge>
                       </div>
                       <div className="text-right space-y-1">
@@ -292,7 +331,7 @@ export default function ChannelDashboard() {
           <TabsContent value="recent" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Recent Videos ({TIME_RANGES.find(r => r.value === timeRange)?.label || `${timeRange} days`})</CardTitle>
+                <CardTitle>Recent Videos ({TIME_RANGES.find(r => r.value === criteria.timeRange)?.label || 'All time'})</CardTitle>
                 <CardDescription>All videos from the selected time period, ordered by engagement</CardDescription>
               </CardHeader>
               <CardContent>

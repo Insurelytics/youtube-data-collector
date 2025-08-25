@@ -203,14 +203,15 @@ export function getChannelTrends({ channelId, sinceIso }) {
   return rows;
 }
 
-export function getTopVideos({ channelId, sinceIso }) {
+export function getTopVideos({ channelId, sinceIso, likeWeight = 150, commentWeight = 500 }) {
   ensureDatabase();
   const where = `WHERE channelId = :channelId AND publishedAt >= :sinceIso`;
+  const engagement = `COALESCE(viewCount,0) * (COALESCE(durationSeconds,0) / 60.0) + ${likeWeight}*COALESCE(likeCount,0) + ${commentWeight}*COALESCE(commentCount,0)`;
   const views = db.prepare(`
-    SELECT id, title, viewCount, likeCount, commentCount, publishedAt, thumbnails
+    SELECT id, title, viewCount, likeCount, commentCount, publishedAt, thumbnails, ${engagement} AS engagement
     FROM videos
     ${where}
-    ORDER BY COALESCE(viewCount,0) DESC
+    ORDER BY ${engagement} DESC
     LIMIT 5
   `).all({ channelId, sinceIso });
   const likes = db.prepare(`SELECT id, title, likeCount FROM videos ${where} ORDER BY COALESCE(likeCount,0) DESC LIMIT 5`).all({ channelId, sinceIso });
@@ -218,18 +219,37 @@ export function getTopVideos({ channelId, sinceIso }) {
   return { views, likes, comments };
 }
 
-export function getSpecialVideos({ channelId, subscriberCount, sinceIso }) {
+export function getSpecialVideos({ channelId, subscriberCount, sinceIso, viralMultiplier = 5 }) {
   ensureDatabase();
   const rows = db.prepare(`
     SELECT id, title, viewCount, likeCount, commentCount, publishedAt, thumbnails
     FROM videos
     WHERE channelId = :channelId AND publishedAt >= :sinceIso AND COALESCE(viewCount,0) >= :threshold
     ORDER BY COALESCE(viewCount,0) DESC
-  `).all({ channelId, sinceIso, threshold: 5 * (subscriberCount || 0) });
+  `).all({ channelId, sinceIso, threshold: viralMultiplier * (subscriberCount || 0) });
   return rows;
 }
 
-export function queryVideosAdvanced({ sinceIso, channelId, sort, order, page, pageSize }) {
+export function getViralVideoCount({ channelId, subscriberCount, viralMultiplier = 5, sinceIso }) {
+  ensureDatabase();
+  const clauses = ['channelId = :channelId', 'COALESCE(viewCount,0) >= :threshold'];
+  const params = { channelId, threshold: viralMultiplier * (subscriberCount || 0) };
+  
+  if (sinceIso) {
+    clauses.push('publishedAt >= :sinceIso');
+    params.sinceIso = sinceIso;
+  }
+  
+  const whereSql = clauses.join(' AND ');
+  const result = db.prepare(`
+    SELECT COUNT(*) as count
+    FROM videos
+    WHERE ${whereSql}
+  `).get(params);
+  return result?.count || 0;
+}
+
+export function queryVideosAdvanced({ sinceIso, channelId, sort, order, page, pageSize, likeWeight = 150, commentWeight = 500 }) {
   ensureDatabase();
   const clauses = [];
   const params = {};
@@ -237,7 +257,7 @@ export function queryVideosAdvanced({ sinceIso, channelId, sort, order, page, pa
   if (channelId) { clauses.push('channelId = :channelId'); params.channelId = channelId; }
   const whereSql = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   const orderSql = order?.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
-  const engagement = 'COALESCE(viewCount,0) * (COALESCE(durationSeconds,0) / 60.0) + 150*COALESCE(likeCount,0) + 500*COALESCE(commentCount,0)';
+  const engagement = `COALESCE(viewCount,0) * (COALESCE(durationSeconds,0) / 60.0) + ${likeWeight}*COALESCE(likeCount,0) + ${commentWeight}*COALESCE(commentCount,0)`;
   let sortExpr = 'publishedAt';
   if (sort === 'engagement') sortExpr = engagement;
   if (sort === 'views') sortExpr = 'viewCount';

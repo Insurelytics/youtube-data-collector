@@ -21,6 +21,14 @@ function createServer() {
 
   const app = express();
   app.use(express.json());
+  
+  // Increase timeout for long-running operations like Instagram scraping
+  app.use((req, res, next) => {
+    // Set timeout to 15 minutes for scraper operations
+    req.setTimeout(900000); // 15 minutes
+    res.setTimeout(900000); // 15 minutes
+    next();
+  });
 
 
 

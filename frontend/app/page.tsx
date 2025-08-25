@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Plus, Trash2, TrendingUp, Users, Eye, MessageCircle, Heart, ExternalLink, RefreshCcw, Settings, Flame, Clock } from 'lucide-react'
+import { Plus, Trash2, TrendingUp, Users, Eye, MessageCircle, Heart, ExternalLink, RefreshCcw, Settings, Flame, Clock, Loader2 } from 'lucide-react'
 import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
@@ -12,6 +12,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { useToast } from "@/hooks/use-toast"
 
 type UiChannel = {
   id: string
@@ -95,12 +98,19 @@ function getGlobalCriteria() {
   }
 }
 
+type LoadingState = {
+  type: 'adding' | 'syncing' | 'removing' | null
+  channelId?: string
+  message?: string
+}
+
 export default function HomePage() {
   const [channels, setChannels] = useState<UiChannel[]>([])
   const [newChannelUrl, setNewChannelUrl] = useState("")
   const [selectedPlatform, setSelectedPlatform] = useState<"instagram" | "youtube">("instagram")
-  const [loading, setLoading] = useState(false)
+  const [loadingState, setLoadingState] = useState<LoadingState>({ type: null })
   const [criteria, setCriteria] = useState(getGlobalCriteria())
+  const { toast } = useToast()
 
   async function loadChannels() {
     const params = new URLSearchParams({
@@ -132,51 +142,125 @@ export default function HomePage() {
 
   async function addChannel() {
     const handle = extractHandle(newChannelUrl)
-    if (!handle) return
-    setLoading(true)
+    if (!handle) {
+      toast({
+        title: "Invalid Input",
+        description: "Please enter a valid channel URL or handle.",
+        variant: "destructive"
+      })
+      return
+    }
+
+    const isInstagram = selectedPlatform === 'instagram'
+    const estimatedTime = isInstagram ? '2-3 minutes' : '30 seconds'
+    
+    setLoadingState({
+      type: 'adding',
+      message: `Adding ${handle} (${selectedPlatform})...`
+    })
+
+    toast({
+      title: `Adding ${selectedPlatform} channel`,
+      description: `Scraping data for ${handle}. This may take ${estimatedTime}...`
+    })
+
     try {
       const res = await fetch("/api/channels", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ handle, platform: selectedPlatform }),
       })
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         throw new Error(err?.error || "Add failed")
       }
+
+      const result = await res.json()
       setNewChannelUrl("")
       await loadChannels()
+
+      toast({
+        title: "Channel added successfully!",
+        description: `${handle} has been added with ${result.count || 0} posts.`
+      })
+
     } catch (e: any) {
-      alert(e?.message || String(e))
+      console.error('Add channel error:', e)
+      toast({
+        title: "Failed to add channel",
+        description: e?.message || "An unexpected error occurred. Please try again.",
+        variant: "destructive"
+      })
     } finally {
-      setLoading(false)
+      setLoadingState({ type: null })
     }
   }
 
   async function removeChannel(id: string) {
-    setLoading(true)
+    setLoadingState({ type: 'removing', channelId: id, message: 'Removing channel...' })
     try {
       await fetch(`/api/channels/${id}`, { method: "DELETE" })
       await loadChannels()
+      toast({
+        title: "Channel removed",
+        description: "Channel has been successfully removed."
+      })
+    } catch (e: any) {
+      toast({
+        title: "Failed to remove channel",
+        description: e?.message || "An unexpected error occurred.",
+        variant: "destructive"
+      })
     } finally {
-      setLoading(false)
+      setLoadingState({ type: null })
     }
   }
 
   async function resyncChannel(handle: string, platform: string = 'youtube') {
-    setLoading(true)
+    const isInstagram = platform === 'instagram'
+    const estimatedTime = isInstagram ? '2-3 minutes' : '30 seconds'
+    
+    // Find the channel ID for this handle to track which specific channel is syncing
+    const channel = channels.find(c => c.handle === handle)
+    const channelId = channel?.id
+    
+    setLoadingState({
+      type: 'syncing',
+      channelId: channelId, // Track which specific channel is syncing
+      message: `Syncing ${handle} (${platform})...`
+    })
+
+    toast({
+      title: `Re-syncing ${platform} channel`,
+      description: `Updating data for ${handle}. This may take ${estimatedTime}...`
+    })
+
     try {
       const params = new URLSearchParams({ handle, platform, sinceDays: String(36500) })
       const res = await fetch(`/api/sync?${params.toString()}`)
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         throw new Error(err?.error || 'Re-Sync failed')
       }
+
+      const result = await res.json()
       await loadChannels()
+
+      toast({
+        title: "Sync completed!",
+        description: `${handle} updated with ${result.count || 0} posts.`
+      })
     } catch (e: any) {
-      alert(e?.message || String(e))
+      console.error('Resync error:', e)
+      toast({
+        title: "Sync failed",
+        description: e?.message || "An unexpected error occurred during sync.",
+        variant: "destructive"
+      })
     } finally {
-      setLoading(false)
+      setLoadingState({ type: null })
     }
   }
 
@@ -247,14 +331,30 @@ export default function HomePage() {
                       onChange={(e) => handleUrlChange(e.target.value)}
                       className="flex-1"
                     />
-                    <Button onClick={addChannel} disabled={loading}>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Channel
+                    <Button onClick={addChannel} disabled={loadingState.type === 'adding'}>
+                      {loadingState.type === 'adding' ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Plus className="h-4 w-4 mr-2" />
+                      )}
+                      {loadingState.type === 'adding' ? 'Adding...' : 'Add Channel'}
                     </Button>
                   </div>
+                  
+                  {/* Loading state display */}
+                  {loadingState.type === 'adding' && (
+                    <Alert>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <AlertTitle>Scraping in progress</AlertTitle>
+                      <AlertDescription>
+                        {loadingState.message}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  
                   <p className="text-xs text-muted-foreground">
                     {selectedPlatform === 'instagram'
-                      ? "Enter an Instagram profile URL or username."
+                      ? "Enter an Instagram profile URL or username. Scraping may take 2-3 minutes."
                       : "Enter a YouTube channel URL or handle."}
                   </p>
                 </div>
@@ -286,9 +386,14 @@ export default function HomePage() {
                       variant="ghost"
                       size="icon"
                       title="Re-Sync"
+                      disabled={loadingState.type === 'syncing' || loadingState.type === 'adding'}
                       onClick={() => channel.handle && resyncChannel(channel.handle, channel.platform)}
                     >
-                      <RefreshCcw className="h-4 w-4" />
+                      {loadingState.type === 'syncing' ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCcw className="h-4 w-4" />
+                      )}
                     </Button>
                     <Button
                       variant="ghost"
@@ -296,8 +401,13 @@ export default function HomePage() {
                       onClick={() => removeChannel(channel.id)}
                       className="text-destructive hover:text-destructive"
                       title="Remove"
+                      disabled={loadingState.type === 'removing' && loadingState.channelId === channel.id}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      {loadingState.type === 'removing' && loadingState.channelId === channel.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
                     </Button>
                   </div>
                 </div>
@@ -321,11 +431,24 @@ export default function HomePage() {
                     <span>{channel.viralVideos} viral</span>
                   </div>
                 </div>
-                <div className="flex justify-center">
+                <div className="flex justify-between items-center">
                   <Badge variant="secondary" className="text-xs">
                     {formatNumber(channel.avgViews)} avg views
                   </Badge>
+                  <Badge variant="outline" className="text-xs capitalize">
+                    {channel.platform}
+                  </Badge>
                 </div>
+                
+                {/* Show loading state for this specific channel only */}
+                {loadingState.type === 'syncing' && loadingState.channelId === channel.id && (
+                  <Alert className="mt-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <AlertDescription>
+                      {loadingState.message}
+                    </AlertDescription>
+                  </Alert>
+                )}
                 <Link href={`/dashboard/${channel.id}`}>
                   <Button className="w-full">
                     View Dashboard

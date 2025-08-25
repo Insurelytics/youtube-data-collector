@@ -34,6 +34,13 @@ export function ensureDatabase() {
       thumbnails TEXT,
       raw TEXT,
       lastSyncedAt TEXT,
+      platform TEXT DEFAULT 'youtube',
+      shortCode TEXT,
+      displayUrl TEXT,
+      videoUrl TEXT,
+      dimensions TEXT,
+      mentions TEXT,
+      takenAtTimestamp INTEGER,
       FOREIGN KEY(channelId) REFERENCES channels(id)
     );
 
@@ -50,6 +57,15 @@ export function upsertChannel(channel) {
   try { db.exec('ALTER TABLE channels ADD COLUMN isActive INTEGER DEFAULT 1'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN thumbnailUrl TEXT'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN platform TEXT DEFAULT "youtube"'); } catch {}
+  
+  // Migrate videos table for Instagram support
+  try { db.exec('ALTER TABLE videos ADD COLUMN platform TEXT DEFAULT "youtube"'); } catch {}
+  try { db.exec('ALTER TABLE videos ADD COLUMN shortCode TEXT'); } catch {}
+  try { db.exec('ALTER TABLE videos ADD COLUMN displayUrl TEXT'); } catch {}
+  try { db.exec('ALTER TABLE videos ADD COLUMN videoUrl TEXT'); } catch {}
+  try { db.exec('ALTER TABLE videos ADD COLUMN dimensions TEXT'); } catch {}
+  try { db.exec('ALTER TABLE videos ADD COLUMN mentions TEXT'); } catch {}
+  try { db.exec('ALTER TABLE videos ADD COLUMN takenAtTimestamp INTEGER'); } catch {}
 
   const stmt = db.prepare(`
     INSERT INTO channels (id, title, handle, subscriberCount, isActive, thumbnailUrl, platform)
@@ -72,10 +88,12 @@ export function upsertVideos(videos) {
   const stmt = db.prepare(`
     INSERT INTO videos (
       id, channelId, title, description, publishedAt, durationSeconds,
-      viewCount, likeCount, commentCount, tags, thumbnails, raw, lastSyncedAt
+      viewCount, likeCount, commentCount, tags, thumbnails, raw, lastSyncedAt,
+      platform, shortCode, displayUrl, videoUrl, dimensions, mentions, takenAtTimestamp
     ) VALUES (
       @id, @channelId, @title, @description, @publishedAt, @durationSeconds,
-      @viewCount, @likeCount, @commentCount, @tags, @thumbnails, @raw, @lastSyncedAt
+      @viewCount, @likeCount, @commentCount, @tags, @thumbnails, @raw, @lastSyncedAt,
+      @platform, @shortCode, @displayUrl, @videoUrl, @dimensions, @mentions, @takenAtTimestamp
     )
     ON CONFLICT(id) DO UPDATE SET
       title=excluded.title,
@@ -88,7 +106,14 @@ export function upsertVideos(videos) {
       tags=excluded.tags,
       thumbnails=excluded.thumbnails,
       raw=excluded.raw,
-      lastSyncedAt=excluded.lastSyncedAt
+      lastSyncedAt=excluded.lastSyncedAt,
+      platform=excluded.platform,
+      shortCode=excluded.shortCode,
+      displayUrl=excluded.displayUrl,
+      videoUrl=excluded.videoUrl,
+      dimensions=excluded.dimensions,
+      mentions=excluded.mentions,
+      takenAtTimestamp=excluded.takenAtTimestamp
   `);
 
   const toRow = (v) => ({
@@ -105,6 +130,13 @@ export function upsertVideos(videos) {
     thumbnails: v.thumbnails ? JSON.stringify(v.thumbnails) : null,
     raw: v.raw ? JSON.stringify(v.raw) : null,
     lastSyncedAt: nowIso,
+    platform: v.platform || 'youtube',
+    shortCode: v.shortCode || null,
+    displayUrl: v.displayUrl || null,
+    videoUrl: v.videoUrl || null,
+    dimensions: v.dimensions ? JSON.stringify(v.dimensions) : null,
+    mentions: v.mentions ? JSON.stringify(v.mentions) : null,
+    takenAtTimestamp: v.takenAtTimestamp || null,
   });
 
   const tx = db.transaction((all) => {

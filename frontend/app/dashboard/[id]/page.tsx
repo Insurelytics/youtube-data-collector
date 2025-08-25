@@ -20,6 +20,10 @@ function formatNumber(num: number) {
   return num.toString()
 }
 
+function formatViewCount(video: any) {
+  return formatNumber(video.viewCount || 0)
+}
+
 function formatDate(dateString: string) {
   return new Date(dateString).toLocaleDateString('en-US', {
     month: 'short',
@@ -35,6 +39,57 @@ function thumbUrlFrom(thumbnails: any): string {
   } catch {
     return ""
   }
+}
+
+function getImageUrl(video: any): string {
+  // For Instagram reels, prioritize locally downloaded image to avoid CORS issues
+  if (video.platform === 'instagram' && video.localImageUrl) {
+    return video.localImageUrl
+  }
+  
+  const thumbnailUrl = thumbUrlFrom(video.thumbnails)
+  if (thumbnailUrl) return thumbnailUrl
+  
+  return "/placeholder.svg"
+}
+
+function getImageClasses(video: any, size: 'small' | 'medium' | 'large' = 'medium'): string {
+  const baseClasses = "object-cover rounded"
+  
+  if (video.platform === 'instagram') {
+    // Instagram images are 9:16 (portrait) - keep consistent height, adjust width to be narrower
+    switch (size) {
+      case 'small':
+        return `w-4 h-7 ${baseClasses}` // Narrower for 9:16 aspect ratio
+      case 'medium':
+        return `w-5 h-9 ${baseClasses}` // 5:9 ratio preserves Instagram proportions  
+      case 'large':
+        return `w-8 h-14 ${baseClasses}` // 8:14 ≈ 4:7 keeps portrait feel but reasonable width
+    }
+  } else {
+    // YouTube images are 16:9 (landscape) - keep existing widths
+    switch (size) {
+      case 'small':
+        return `w-12 h-7 ${baseClasses}` // 12:7 ≈ 16:9.3 ratio
+      case 'medium':
+        return `w-16 h-9 ${baseClasses}` // 16:9 ratio
+      case 'large':
+        return `w-24 h-14 ${baseClasses}` // 24:14 ≈ 12:7 ≈ 16:9.3 ratio
+    }
+  }
+}
+
+function getPostUrl(video: any): string {
+  if (video.platform === 'instagram') {
+    return `https://www.instagram.com/p/${video.shortCode}/`
+  }
+  return `https://www.youtube.com/watch?v=${video.id}`
+}
+
+function cleanTitle(title: string): string {
+  if (!title) return title
+  // Remove hashtags from title for display
+  return title.replace(/#\w+/g, '').replace(/\s+/g, ' ').trim()
 }
 
 // Time range options with their corresponding days
@@ -236,17 +291,17 @@ export default function ChannelDashboard() {
                       <div className="flex items-center justify-center w-8 h-8 bg-primary text-primary-foreground rounded-full text-sm font-bold">
                         {index + 1}
                       </div>
-                      <a href={`https://www.youtube.com/watch?v=${video.id}`} target="_blank" rel="noopener noreferrer">
+                      <a href={getPostUrl(video)} target="_blank" rel="noopener noreferrer">
                         <img 
-                          src={thumbUrlFrom(video.thumbnails) || "/placeholder.svg"}
+                          src={getImageUrl(video)}
                           alt={video.title}
-                          className="w-24 h-14 object-cover rounded"
+                          className={getImageClasses(video, 'large')}
                         />
                       </a>
                       <div className="flex-1">
                         <h3 className="font-semibold line-clamp-2">
-                          <a href={`https://www.youtube.com/watch?v=${video.id}`} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                            {video.title}
+                          <a href={getPostUrl(video)} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                            {cleanTitle(video.title)}
                           </a>
                         </h3>
                         <p className="text-sm text-muted-foreground">{formatDate(video.publishedAt)}</p>
@@ -255,7 +310,7 @@ export default function ChannelDashboard() {
                         <div className="flex items-center gap-4 text-sm">
                           <div className="flex items-center gap-1">
                             <Eye className="h-3 w-3" />
-                            {formatNumber(video.viewCount || 0)}
+                            {formatViewCount(video)}
                           </div>
                           <div className="flex items-center gap-1">
                             <MessageCircle className="h-3 w-3" />
@@ -287,17 +342,17 @@ export default function ChannelDashboard() {
                       <div className="flex items-center justify-center w-8 h-8 bg-orange-500 text-white rounded-full text-sm font-bold">
                         🔥
                       </div>
-                      <a href={`https://www.youtube.com/watch?v=${video.id}`} target="_blank" rel="noopener noreferrer">
+                      <a href={getPostUrl(video)} target="_blank" rel="noopener noreferrer">
                         <img 
-                          src={thumbUrlFrom(video.thumbnails) || "/placeholder.svg"}
+                          src={getImageUrl(video)}
                           alt={video.title}
-                          className="w-24 h-14 object-cover rounded"
+                          className={getImageClasses(video, 'large')}
                         />
                       </a>
                       <div className="flex-1">
                         <h3 className="font-semibold line-clamp-2">
-                          <a href={`https://www.youtube.com/watch?v=${video.id}`} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                            {video.title}
+                          <a href={getPostUrl(video)} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                            {cleanTitle(video.title)}
                           </a>
                         </h3>
                         <p className="text-sm text-muted-foreground">{formatDate(video.publishedAt)}</p>
@@ -309,7 +364,7 @@ export default function ChannelDashboard() {
                         <div className="flex items-center gap-4 text-sm">
                           <div className="flex items-center gap-1">
                             <Eye className="h-3 w-3" />
-                            {formatNumber(video.viewCount || 0)}
+                            {formatViewCount(video)}
                           </div>
                           <div className="flex items-center gap-1">
                             <MessageCircle className="h-3 w-3" />
@@ -350,17 +405,17 @@ export default function ChannelDashboard() {
                       <TableRow key={video.id}>
                         <TableCell>
                           <div className="flex items-center gap-3">
-                            <a href={`https://www.youtube.com/watch?v=${video.id}`} target="_blank" rel="noopener noreferrer">
+                            <a href={getPostUrl(video)} target="_blank" rel="noopener noreferrer">
                               <img 
-                                src={thumbUrlFrom(video.thumbnails) || "/placeholder.svg"}
+                                src={getImageUrl(video)}
                                 alt={video.title}
-                                className="w-16 h-9 object-cover rounded"
+                                className={getImageClasses(video, 'medium')}
                               />
                             </a>
                             <div>
                               <p className="font-medium line-clamp-2 max-w-xs">
-                                <a href={`https://www.youtube.com/watch?v=${video.id}`} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                                  {video.title}
+                                <a href={getPostUrl(video)} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                                  {cleanTitle(video.title)}
                                 </a>
                               </p>
                               <p className="text-sm text-muted-foreground">{video.durationSeconds ? `${Math.round(video.durationSeconds/60)}m` : ''}</p>
@@ -368,7 +423,7 @@ export default function ChannelDashboard() {
                           </div>
                         </TableCell>
                         <TableCell>{formatDate(video.publishedAt)}</TableCell>
-                        <TableCell>{formatNumber(video.viewCount || 0)}</TableCell>
+                        <TableCell>{formatViewCount(video)}</TableCell>
                         <TableCell>{formatNumber(video.commentCount || 0)}</TableCell>
                         <TableCell>{formatNumber(video.likeCount || 0)}</TableCell>
                       </TableRow>

@@ -4,6 +4,8 @@ dotenv.config();
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { ensureDatabase, upsertVideos, queryVideos, upsertChannel, listChannels, removeChannel, getChannel, getChannelTrends, getTopVideos, getSpecialVideos, getViralVideoCount, queryVideosAdvanced } from './storage.js';
 import { syncChannelVideos as syncYouTubeVideos, getChannelByHandle as getYouTubeChannelByHandle } from './youtube.js';
 import { syncChannelReels as syncInstagramReels, getChannelByHandle as getInstagramChannelByHandle } from './instagram.js';
@@ -12,15 +14,60 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 3000;
+const IMAGES_DIR = path.join(__dirname, '../images');
 const DEFAULT_DAYS = 36500; // forever
 // Use a very large window for syncing so we fetch as much history as possible
 const MAX_SYNC_DAYS = 36500; // ~100 years
+
+// Ensure images directory exists
+if (!fs.existsSync(IMAGES_DIR)) {
+  fs.mkdirSync(IMAGES_DIR, { recursive: true });
+}
+
+// Download image from URL and save to local filesystem
+async function downloadImage(imageUrl, videoId) {
+  try {
+    if (!imageUrl || !imageUrl.includes('instagram')) return null;
+    
+    const response = await fetch(imageUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+
+    if (!response.ok) {
+      console.warn(`Failed to download image for ${videoId}: ${response.status}`);
+      return null;
+    }
+
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.startsWith('image/')) {
+      console.warn(`Invalid content type for ${videoId}: ${contentType}`);
+      return null;
+    }
+
+    const extension = contentType.split('/')[1] || 'jpg';
+    const filename = `${videoId}.${extension}`;
+    const filepath = path.join(IMAGES_DIR, filename);
+
+    const buffer = await response.arrayBuffer();
+    fs.writeFileSync(filepath, Buffer.from(buffer));
+
+    return `/api/images/${filename}`;
+  } catch (error) {
+    console.error(`Error downloading image for ${videoId}:`, error);
+    return null;
+  }
+}
 
 function createServer() {
   ensureDatabase();
 
   const app = express();
   app.use(express.json());
+  
+  // Serve static images
+  app.use('/api/images', express.static(IMAGES_DIR));
   
   // Increase timeout for long-running operations like Instagram scraping
   app.use((req, res, next) => {
@@ -48,6 +95,19 @@ function createServer() {
       let result;
       if (platform === 'instagram') {
         result = await syncInstagramReels({ handle, sinceDays });
+        
+        // Download images for Instagram reels
+        if (result.reels) {
+          console.log(`Downloading ${result.reels.length} Instagram reel images...`);
+          for (const reel of result.reels) {
+            if (reel.displayUrl) {
+              const localImageUrl = await downloadImage(reel.displayUrl, reel.id);
+              if (localImageUrl) {
+                reel.localImageUrl = localImageUrl;
+              }
+            }
+          }
+        }
       } else {
         // Default to YouTube
         result = await syncYouTubeVideos({ apiKey, handle, sinceDays });
@@ -130,6 +190,19 @@ function createServer() {
       let result;
       if (platform === 'instagram') {
         result = await syncInstagramReels({ handle, sinceDays: MAX_SYNC_DAYS });
+        
+        // Download images for Instagram reels
+        if (result.reels) {
+          console.log(`Downloading ${result.reels.length} Instagram reel images...`);
+          for (const reel of result.reels) {
+            if (reel.displayUrl) {
+              const localImageUrl = await downloadImage(reel.displayUrl, reel.id);
+              if (localImageUrl) {
+                reel.localImageUrl = localImageUrl;
+              }
+            }
+          }
+        }
       } else {
         // Default to YouTube
         result = await syncYouTubeVideos({ apiKey, handle, sinceDays: MAX_SYNC_DAYS });
@@ -183,6 +256,8 @@ function createServer() {
     const { rows, total } = queryVideosAdvanced({ sinceIso, channelId, sort: 'engagement', order, page, pageSize, likeWeight, commentWeight });
     res.json({ total, page, pageSize, rows });
   });
+
+
 
   app.listen(PORT, () => {
     console.log(`Server listening on http://localhost:${PORT}`);

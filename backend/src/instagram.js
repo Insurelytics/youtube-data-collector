@@ -20,7 +20,7 @@ export async function syncChannelReels({ handle, sinceDays }) {
   const sinceDate = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
   const sinceIsoDate = sinceDate.toISOString().split('T')[0]; // YYYY-MM-DD format
 
-  // Prepare Actor input matching your working prototype
+  // Prepare Actor input to get profile details and posts
   const input = {
     "addParentData": false,
     "directUrls": [
@@ -30,10 +30,9 @@ export async function syncChannelReels({ handle, sinceDays }) {
     "isUserReelFeedURL": false,
     "isUserTaggedFeedURL": false,
     "onlyPostsNewerThan": sinceIsoDate,
-    "resultsLimit": 5, // Limited for testing to save time and money
-    "resultsType": "stories", // Using same as working prototype
-    "searchLimit": 1,
-    "searchType": "hashtag"
+    "resultsLimit": 10,
+    "resultsType": "details",
+    "searchLimit": 100
   };
 
   try {
@@ -44,36 +43,44 @@ export async function syncChannelReels({ handle, sinceDays }) {
     console.log('Fetching results from dataset...');
     const { items } = await client.dataset(run.defaultDatasetId).listItems();
     
-    console.log(`Found ${items.length} Instagram posts for ${handle}`);
+    console.log(`Found ${items.length} Instagram profile data items for ${handle}`);
 
-    // Channel data
+    if (!items || items.length === 0) {
+      throw new Error('No Instagram profile data found');
+    }
+
+    const profile = items[0];
+    const posts = profile.latestPosts || [];
+
+    // Channel data from profile
     const channelId = `ig_${handle}`;
-    const channelTitle = handle; // Instagram doesn't provide display name in post data
-    const subscriberCount = null; // Instagram doesn't expose follower counts publicly
-    const thumbnailUrl = null; // Would need separate API call to get profile picture
+    const channelTitle = profile.fullName || profile.username || handle;
+    const subscriberCount = profile.followersCount || null;
+    const thumbnailUrl = profile.profilePicUrlHD || profile.profilePicUrl || null;
 
     // Convert Instagram posts to our video format
-    const reels = items.map(item => ({
-      id: `ig_${item.shortCode}`, // Prefix with 'ig_' to avoid conflicts with YouTube IDs
+    const reels = posts.map(post => ({
+      id: `ig_${post.shortCode}`, // Prefix with 'ig_' to avoid conflicts with YouTube IDs
       channelId,
-      title: item.caption || `Instagram post ${item.shortCode}`, // Instagram posts don't have separate titles
-      description: item.caption || '',
-      publishedAt: item.timestamp || new Date(item.takenAtTimestamp * 1000).toISOString(),
+      title: post.caption || `Instagram post ${post.shortCode}`, // Instagram posts don't have separate titles
+      description: post.caption || '',
+      publishedAt: post.timestamp || new Date().toISOString(),
       durationSeconds: null, // Instagram doesn't provide video duration
-      viewCount: item.videoViewCount || null, // Use videoViewCount from Apify
-      likeCount: item.likesCount || null,
-      commentCount: item.commentsCount || null,
-      tags: item.hashtags || null,
-      thumbnails: item.displayUrl ? { default: { url: item.displayUrl } } : null,
-      raw: item,
+      viewCount: post.videoViewCount || null, // Use videoViewCount from Apify
+      likeCount: post.likesCount || null,
+      commentCount: post.commentsCount || null,
+      tags: post.hashtags || null,
+      thumbnails: post.displayUrl ? { default: { url: post.displayUrl } } : null,
+      raw: post,
       // Instagram-specific fields
       platform: 'instagram',
-      shortCode: item.shortCode,
-      displayUrl: item.displayUrl || null,
-      videoUrl: item.videoUrl || null,
-      dimensions: (item.width && item.height) ? { width: item.width, height: item.height } : null,
-      mentions: item.mentions || null,
-      takenAtTimestamp: item.takenAtTimestamp || null,
+      shortCode: post.shortCode,
+      displayUrl: post.displayUrl || null,
+      videoUrl: post.videoUrl || null,
+      dimensions: (post.dimensionsWidth && post.dimensionsHeight) ? { width: post.dimensionsWidth, height: post.dimensionsHeight } : null,
+      mentions: post.mentions || null,
+      images: post.images || null,
+      type: post.type || null,
     }));
 
     console.log(`Converted ${reels.length} Instagram posts to reels format`);
@@ -83,7 +90,15 @@ export async function syncChannelReels({ handle, sinceDays }) {
       channelTitle,
       subscriberCount,
       thumbnailUrl,
-      reels
+      reels,
+      profileData: {
+        biography: profile.biography,
+        postsCount: profile.postsCount,
+        followsCount: profile.followsCount,
+        verified: profile.verified,
+        businessCategoryName: profile.businessCategoryName,
+        externalUrls: profile.externalUrls
+      }
     };
 
   } catch (error) {
@@ -101,9 +116,7 @@ export async function getChannelByHandle({ handle }) {
   }
 
   try {
-    // For now, we'll use a simple approach similar to the sync function
-    // to get basic channel info. In the future, this could be optimized
-    // to use a more specific API endpoint for profile information only.
+    // Use 'details' resultsType to get profile information
     const input = {
       "addParentData": false,
       "directUrls": [
@@ -112,21 +125,43 @@ export async function getChannelByHandle({ handle }) {
       "enhanceUserSearchWithFacebookPage": false,
       "isUserReelFeedURL": false,
       "isUserTaggedFeedURL": false,
-      "resultsLimit": 1, // Just need one post to get channel info
-      "resultsType": "stories", // Using same as working prototype
-      "searchLimit": 1,
-      "searchType": "hashtag"
+      "onlyPostsNewerThan": "2023-01-01",
+      "resultsLimit": 10,
+      "resultsType": "details",
+      "searchLimit": 5
     };
 
     const run = await client.actor("shu8hvrXbJbY3Eb9W").call(input);
     const { items } = await client.dataset(run.defaultDatasetId).listItems();
 
-    // Return basic channel data
+    if (!items || items.length === 0) {
+      throw new Error('No profile data found');
+    }
+
+    const profile = items[0];
+
+    // Return profile data mapped to our channel format
     return {
       channelId: `ig_${handle}`,
-      channelTitle: handle, // Instagram API doesn't provide display name in this endpoint
-      subscriberCount: null, // Instagram doesn't expose follower counts publicly via API
-      thumbnailUrl: null // Would need separate API call to get profile picture
+      channelTitle: profile.fullName || profile.username || handle,
+      subscriberCount: profile.followersCount || null,
+      thumbnailUrl: profile.profilePicUrlHD || profile.profilePicUrl || null,
+      handle: profile.username || handle,
+      biography: profile.biography || null,
+      postsCount: profile.postsCount || null,
+      followsCount: profile.followsCount || null,
+      verified: profile.verified || false,
+      businessCategoryName: profile.businessCategoryName || null,
+      externalUrls: profile.externalUrls || [],
+      profileData: {
+        biography: profile.biography,
+        postsCount: profile.postsCount,
+        followsCount: profile.followsCount,
+        verified: profile.verified,
+        businessCategoryName: profile.businessCategoryName,
+        externalUrls: profile.externalUrls
+      },
+      raw: profile
     };
 
   } catch (error) {

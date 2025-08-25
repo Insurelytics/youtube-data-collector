@@ -113,9 +113,30 @@ function createServer() {
         result = await syncYouTubeVideos({ apiKey, handle, sinceDays });
       }
 
-      const { channelId, channelTitle, subscriberCount, thumbnailUrl, videos, reels } = result;
+      const { channelId, channelTitle, subscriberCount, thumbnailUrl, videos, reels, profileData } = result;
       const content = videos || reels || [];
-      upsertChannel({ id: channelId, title: channelTitle, handle, subscriberCount, isActive: 1, thumbnailUrl, platform });
+      
+      const channelData = { 
+        id: channelId, 
+        title: channelTitle, 
+        handle, 
+        subscriberCount, 
+        isActive: 1, 
+        thumbnailUrl, 
+        platform 
+      };
+      
+      // Add Instagram profile data if available
+      if (profileData) {
+        channelData.biography = profileData.biography;
+        channelData.postsCount = profileData.postsCount;
+        channelData.followsCount = profileData.followsCount;
+        channelData.verified = profileData.verified ? 1 : 0;
+        channelData.businessCategoryName = profileData.businessCategoryName;
+        channelData.externalUrls = profileData.externalUrls ? JSON.stringify(profileData.externalUrls) : null;
+      }
+      
+      upsertChannel(channelData);
       upsertVideos(content);
       res.json({ ok: true, channelId, channelTitle, count: content.length });
     } catch (err) {
@@ -144,17 +165,37 @@ function createServer() {
           try {
             let info;
             if (ch.platform === 'instagram') {
-              // TODO: Implement Instagram channel info fetching
-              console.log(`TODO: Fetch Instagram channel info for ${ch.handle}`);
-              continue; // Skip for now
+              info = await getInstagramChannelByHandle({ handle: ch.handle });
             } else {
               // Default to YouTube for existing channels
               info = await getYouTubeChannelByHandle({ apiKey, handle: ch.handle });
             }
             if (info) {
-              upsertChannel({ id: info.channelId, title: ch.title, handle: ch.handle, subscriberCount: info.subscriberCount, isActive: 1, thumbnailUrl: info.thumbnailUrl });
+              const channelData = { 
+                id: info.channelId, 
+                title: ch.title, 
+                handle: ch.handle, 
+                subscriberCount: info.subscriberCount, 
+                isActive: 1, 
+                thumbnailUrl: info.thumbnailUrl,
+                platform: ch.platform || 'youtube'
+              };
+              
+              // Add Instagram profile data if available
+              if (info.profileData) {
+                channelData.biography = info.profileData.biography;
+                channelData.postsCount = info.profileData.postsCount;
+                channelData.followsCount = info.profileData.followsCount;
+                channelData.verified = info.profileData.verified ? 1 : 0;
+                channelData.businessCategoryName = info.profileData.businessCategoryName;
+                channelData.externalUrls = info.profileData.externalUrls ? JSON.stringify(info.profileData.externalUrls) : null;
+              }
+              
+              upsertChannel(channelData);
             }
-          } catch {}
+          } catch (err) {
+            console.warn(`Failed to fetch thumbnail for channel ${ch.handle} (${ch.platform}):`, err.message);
+          }
         }
       }
       
@@ -175,6 +216,7 @@ function createServer() {
       
       res.json({ rows: channelsWithViralCounts });
     } catch (e) {
+      console.error('Error in /api/channels GET:', e.message);
       res.json({ rows: listChannels() });
     }
   });
@@ -208,9 +250,30 @@ function createServer() {
         result = await syncYouTubeVideos({ apiKey, handle, sinceDays: MAX_SYNC_DAYS });
       }
 
-      const { channelId, channelTitle, subscriberCount, thumbnailUrl, videos, reels } = result;
+      const { channelId, channelTitle, subscriberCount, thumbnailUrl, videos, reels, profileData } = result;
       const content = videos || reels || [];
-      upsertChannel({ id: channelId, title: channelTitle, handle, subscriberCount, isActive: 1, thumbnailUrl, platform });
+      
+      const channelData = { 
+        id: channelId, 
+        title: channelTitle, 
+        handle, 
+        subscriberCount, 
+        isActive: 1, 
+        thumbnailUrl, 
+        platform 
+      };
+      
+      // Add Instagram profile data if available
+      if (profileData) {
+        channelData.biography = profileData.biography;
+        channelData.postsCount = profileData.postsCount;
+        channelData.followsCount = profileData.followsCount;
+        channelData.verified = profileData.verified ? 1 : 0;
+        channelData.businessCategoryName = profileData.businessCategoryName;
+        channelData.externalUrls = profileData.externalUrls ? JSON.stringify(profileData.externalUrls) : null;
+      }
+      
+      upsertChannel(channelData);
       upsertVideos(content);
       res.json({ ok: true, channelId, channelTitle, count: content.length });
     } catch (e) {

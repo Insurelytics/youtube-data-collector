@@ -10,7 +10,7 @@ if [ ! -f "$ROOT_DIR/.env" ]; then
 fi
 
 echo "[deps] Installing backend deps (if needed)..."
-cd "$ROOT_DIR"
+cd "$ROOT_DIR/backend"
 if [ ! -d node_modules ]; then
   npm install
 fi
@@ -28,7 +28,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "[run] Starting backend on http://localhost:4000"
-cd "$ROOT_DIR"
+cd "$ROOT_DIR/backend"
 PORT=4000 nodemon src/server.js &
 
 echo "[run] Starting frontend on http://localhost:3000"

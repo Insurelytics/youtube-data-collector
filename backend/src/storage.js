@@ -49,18 +49,20 @@ export function upsertChannel(channel) {
   try { db.exec('ALTER TABLE channels ADD COLUMN subscriberCount INTEGER'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN isActive INTEGER DEFAULT 1'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN thumbnailUrl TEXT'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN platform TEXT DEFAULT "youtube"'); } catch {}
 
   const stmt = db.prepare(`
-    INSERT INTO channels (id, title, handle, subscriberCount, isActive, thumbnailUrl)
-    VALUES (@id, @title, @handle, @subscriberCount, COALESCE(@isActive, 1), @thumbnailUrl)
+    INSERT INTO channels (id, title, handle, subscriberCount, isActive, thumbnailUrl, platform)
+    VALUES (@id, @title, @handle, @subscriberCount, COALESCE(@isActive, 1), @thumbnailUrl, COALESCE(@platform, 'youtube'))
     ON CONFLICT(id) DO UPDATE SET
       title=excluded.title,
       handle=excluded.handle,
       subscriberCount=COALESCE(excluded.subscriberCount, channels.subscriberCount),
       isActive=COALESCE(excluded.isActive, channels.isActive),
-      thumbnailUrl=COALESCE(excluded.thumbnailUrl, channels.thumbnailUrl)
+      thumbnailUrl=COALESCE(excluded.thumbnailUrl, channels.thumbnailUrl),
+      platform=COALESCE(excluded.platform, channels.platform)
   `);
-  const withDefaults = { subscriberCount: null, isActive: 1, thumbnailUrl: null, ...channel };
+  const withDefaults = { subscriberCount: null, isActive: 1, thumbnailUrl: null, platform: 'youtube', ...channel };
   stmt.run(withDefaults);
 }
 
@@ -149,10 +151,15 @@ export function listChannels() {
   try { db.exec('ALTER TABLE channels ADD COLUMN subscriberCount INTEGER'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN isActive INTEGER DEFAULT 1'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN thumbnailUrl TEXT'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN platform TEXT DEFAULT "youtube"'); } catch {}
+  // Default existing channels to YouTube
+  try { db.exec('UPDATE channels SET platform = "youtube" WHERE platform IS NULL'); } catch {}
+
   const rows = db.prepare(`
     SELECT c.id, c.title, c.handle, COALESCE(c.subscriberCount, 0) AS subscriberCount,
            COALESCE(c.isActive, 1) AS isActive,
            c.thumbnailUrl AS thumbnailUrl,
+           COALESCE(c.platform, 'youtube') AS platform,
            (SELECT MAX(lastSyncedAt) FROM videos v WHERE v.channelId = c.id) AS lastSyncedAt,
            (SELECT COUNT(1) FROM videos v WHERE v.channelId = c.id) AS videoCount,
            (SELECT SUM(COALESCE(viewCount,0)) FROM videos v WHERE v.channelId = c.id) AS totalViews,
@@ -174,11 +181,16 @@ export function getChannel(id) {
   try { db.exec('ALTER TABLE channels ADD COLUMN subscriberCount INTEGER'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN isActive INTEGER DEFAULT 1'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN thumbnailUrl TEXT'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN platform TEXT DEFAULT "youtube"'); } catch {}
+  // Default existing channels to YouTube
+  try { db.exec('UPDATE channels SET platform = "youtube" WHERE platform IS NULL'); } catch {}
+
   return db.prepare(`
     SELECT c.id, c.title, c.handle,
            COALESCE(c.subscriberCount,0) AS subscriberCount,
            COALESCE(c.isActive,1) AS isActive,
            c.thumbnailUrl AS thumbnailUrl,
+           COALESCE(c.platform, 'youtube') AS platform,
            (SELECT MAX(lastSyncedAt) FROM videos v WHERE v.channelId = c.id) AS lastSyncedAt,
            COALESCE((SELECT COUNT(1) FROM videos v WHERE v.channelId = c.id), 0) AS videoCount,
            COALESCE((SELECT SUM(COALESCE(viewCount,0)) FROM videos v WHERE v.channelId = c.id), 0) AS totalViews

@@ -23,6 +23,7 @@ type UiChannel = {
   totalViews: number
   avgViews: number
   viralVideos: number
+  platform: string
 }
 
 function formatNumber(num: number) {
@@ -31,7 +32,7 @@ function formatNumber(num: number) {
   return num.toFixed(0).toString()
 }
 
-function extractHandle(input: string) {
+function extractHandle(input: string): string {
   const trimmed = input.trim()
   if (!trimmed) return ""
   if (trimmed.startsWith("@")) return trimmed
@@ -42,6 +43,29 @@ function extractHandle(input: string) {
   } catch {
     return ""
   }
+}
+
+function detectPlatform(url: string): "instagram" | "youtube" | null {
+  const trimmed = url.trim()
+  if (!trimmed) return null
+
+  try {
+    const urlObj = new URL(trimmed)
+    const hostname = urlObj.hostname.toLowerCase()
+
+    if (hostname.includes('instagram.com')) {
+      return 'instagram'
+    } else if (hostname.includes('youtube.com') || hostname.includes('youtu.be')) {
+      return 'youtube'
+    }
+  } catch {
+    // Not a valid URL, check for handle patterns
+    if (trimmed.startsWith('@')) {
+      return null // Can't determine platform from just a handle
+    }
+  }
+
+  return null
 }
 
 // Time range options with their corresponding days
@@ -74,6 +98,7 @@ function getGlobalCriteria() {
 export default function HomePage() {
   const [channels, setChannels] = useState<UiChannel[]>([])
   const [newChannelUrl, setNewChannelUrl] = useState("")
+  const [selectedPlatform, setSelectedPlatform] = useState<"instagram" | "youtube">("instagram")
   const [loading, setLoading] = useState(false)
   const [criteria, setCriteria] = useState(getGlobalCriteria())
 
@@ -96,6 +121,7 @@ export default function HomePage() {
       totalViews: Number(r.totalViews || 0),
       avgViews: Number(r.avgViews || 0),
       viralVideos: Number(r.viralVideoCount || 0),
+      platform: r.platform || 'youtube',
     }))
     setChannels(mapped)
   }
@@ -112,7 +138,7 @@ export default function HomePage() {
       const res = await fetch("/api/channels", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ handle }),
+        body: JSON.stringify({ handle, platform: selectedPlatform }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
@@ -137,10 +163,10 @@ export default function HomePage() {
     }
   }
 
-  async function resyncChannel(handle: string) {
+  async function resyncChannel(handle: string, platform: string = 'youtube') {
     setLoading(true)
     try {
-      const params = new URLSearchParams({ handle, sinceDays: String(36500) })
+      const params = new URLSearchParams({ handle, platform, sinceDays: String(36500) })
       const res = await fetch(`/api/sync?${params.toString()}`)
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
@@ -151,6 +177,15 @@ export default function HomePage() {
       alert(e?.message || String(e))
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleUrlChange = (url: string) => {
+    setNewChannelUrl(url)
+    // Auto-detect platform from URL
+    const detectedPlatform = detectPlatform(url)
+    if (detectedPlatform) {
+      setSelectedPlatform(detectedPlatform)
     }
   }
 
@@ -189,21 +224,39 @@ export default function HomePage() {
                   Add New Channel
                 </CardTitle>
                 <CardDescription>
-                  Enter a YouTube channel URL or handle to start tracking
+                  Enter a social media profile URL to start tracking
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="https://youtube.com/@channelname or @channelname"
-                    value={newChannelUrl}
-                    onChange={(e) => setNewChannelUrl(e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button onClick={addChannel} disabled={loading}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Channel
-                  </Button>
+                <div className="space-y-4">
+                  <div className="flex gap-2">
+                    <Select value={selectedPlatform} onValueChange={(value: "instagram" | "youtube") => setSelectedPlatform(value)}>
+                      <SelectTrigger className="w-40">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="instagram">Instagram</SelectItem>
+                        <SelectItem value="youtube">YouTube</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      placeholder={selectedPlatform === 'instagram'
+                        ? "https://instagram.com/username or username"
+                        : "https://youtube.com/@channelname or @channelname"}
+                      value={newChannelUrl}
+                      onChange={(e) => handleUrlChange(e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button onClick={addChannel} disabled={loading}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Channel
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedPlatform === 'instagram'
+                      ? "Enter an Instagram profile URL or username."
+                      : "Enter a YouTube channel URL or handle."}
+                  </p>
                 </div>
               </CardContent>
             </Card>
@@ -233,7 +286,7 @@ export default function HomePage() {
                       variant="ghost"
                       size="icon"
                       title="Re-Sync"
-                      onClick={() => channel.handle && resyncChannel(channel.handle)}
+                      onClick={() => channel.handle && resyncChannel(channel.handle, channel.platform)}
                     >
                       <RefreshCcw className="h-4 w-4" />
                     </Button>

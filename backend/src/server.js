@@ -5,7 +5,8 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ensureDatabase, upsertVideos, queryVideos, upsertChannel, listChannels, removeChannel, getChannel, getChannelTrends, getTopVideos, getSpecialVideos, getViralVideoCount, queryVideosAdvanced } from './storage.js';
-import { syncChannelVideos, getChannelByHandle } from './youtube.js';
+import { syncChannelVideos as syncYouTubeVideos, getChannelByHandle as getYouTubeChannelByHandle } from './youtube.js';
+import { syncChannelReels as syncInstagramReels, getChannelByHandle as getInstagramChannelByHandle } from './instagram.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,12 +33,23 @@ function createServer() {
     if (!apiKey) return res.status(400).json({ error: 'Missing API_KEY env' });
     if (!req.query.handle) return res.status(400).json({ error: 'Missing handle' });
     const handle = req.query.handle.toString();
+    const platform = (req.query.platform || 'youtube').toString();
     const sinceDays = Number(req.query.sinceDays || MAX_SYNC_DAYS);
+
     try {
-      const { channelId, channelTitle, subscriberCount, thumbnailUrl, videos } = await syncChannelVideos({ apiKey, handle, sinceDays });
-      upsertChannel({ id: channelId, title: channelTitle, handle, subscriberCount, isActive: 1, thumbnailUrl });
-      upsertVideos(videos);
-      res.json({ ok: true, channelId, channelTitle, count: videos.length });
+      let result;
+      if (platform === 'instagram') {
+        result = await syncInstagramReels({ handle, sinceDays });
+      } else {
+        // Default to YouTube
+        result = await syncYouTubeVideos({ apiKey, handle, sinceDays });
+      }
+
+      const { channelId, channelTitle, subscriberCount, thumbnailUrl, videos, reels } = result;
+      const content = videos || reels || [];
+      upsertChannel({ id: channelId, title: channelTitle, handle, subscriberCount, isActive: 1, thumbnailUrl, platform });
+      upsertVideos(content);
+      res.json({ ok: true, channelId, channelTitle, count: content.length });
     } catch (err) {
       res.status(500).json({ error: err?.message || 'Sync failed' });
     }
@@ -62,8 +74,18 @@ function createServer() {
       if (apiKey && missing.length) {
         for (const ch of missing) {
           try {
-            const info = await getChannelByHandle({ apiKey, handle: ch.handle });
-            upsertChannel({ id: info.channelId, title: ch.title, handle: ch.handle, subscriberCount: info.subscriberCount, isActive: 1, thumbnailUrl: info.thumbnailUrl });
+            let info;
+            if (ch.platform === 'instagram') {
+              // TODO: Implement Instagram channel info fetching
+              console.log(`TODO: Fetch Instagram channel info for ${ch.handle}`);
+              continue; // Skip for now
+            } else {
+              // Default to YouTube for existing channels
+              info = await getYouTubeChannelByHandle({ apiKey, handle: ch.handle });
+            }
+            if (info) {
+              upsertChannel({ id: info.channelId, title: ch.title, handle: ch.handle, subscriberCount: info.subscriberCount, isActive: 1, thumbnailUrl: info.thumbnailUrl });
+            }
           } catch {}
         }
       }
@@ -94,11 +116,22 @@ function createServer() {
     if (!apiKey) return res.status(400).json({ error: 'Missing API_KEY env' });
     const handle = (req.body?.handle || '').toString();
     if (!handle) return res.status(400).json({ error: 'handle required' });
+    const platform = (req.body?.platform || 'youtube').toString();
+
     try {
-      const { channelId, channelTitle, subscriberCount, thumbnailUrl, videos } = await syncChannelVideos({ apiKey, handle, sinceDays: MAX_SYNC_DAYS });
-      upsertChannel({ id: channelId, title: channelTitle, handle, subscriberCount, isActive: 1, thumbnailUrl });
-      upsertVideos(videos);
-      res.json({ ok: true, channelId, channelTitle, count: videos.length });
+      let result;
+      if (platform === 'instagram') {
+        result = await syncInstagramReels({ handle, sinceDays: MAX_SYNC_DAYS });
+      } else {
+        // Default to YouTube
+        result = await syncYouTubeVideos({ apiKey, handle, sinceDays: MAX_SYNC_DAYS });
+      }
+
+      const { channelId, channelTitle, subscriberCount, thumbnailUrl, videos, reels } = result;
+      const content = videos || reels || [];
+      upsertChannel({ id: channelId, title: channelTitle, handle, subscriberCount, isActive: 1, thumbnailUrl, platform });
+      upsertVideos(content);
+      res.json({ ok: true, channelId, channelTitle, count: content.length });
     } catch (e) {
       res.status(500).json({ error: e?.message || 'Add failed' });
     }

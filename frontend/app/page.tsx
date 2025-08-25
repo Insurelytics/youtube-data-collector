@@ -124,27 +124,41 @@ export default function HomePage() {
   const { toast } = useToast()
 
   async function loadChannels() {
-    const params = new URLSearchParams({
-      viralMultiplier: criteria.viralMultiplier.toString(),
-      days: criteria.timeRange
-    })
-    const res = await fetch(`/api/channels?${params.toString()}`)
-    const data = await res.json()
-    const rows = Array.isArray(data?.rows) ? data.rows : []
-    const active = rows.filter((r: any) => r.isActive)
-    const mapped: UiChannel[] = active.map((r: any) => ({
-      id: r.id,
-      name: r.title,
-      handle: r.handle || "",
-      subscribers: Number(r.subscriberCount || 0),
-      avatar: r.thumbnailUrl || "/placeholder.svg?height=40&width=40&text=CH",
-      totalVideos: Number(r.videoCount || 0),
-      totalViews: Number(r.totalViews || 0),
-      avgViews: Number(r.avgViews || 0),
-      viralVideos: Number(r.viralVideoCount || 0),
-      platform: r.platform || 'youtube',
-    }))
-    setChannels(mapped)
+    try {
+      const params = new URLSearchParams({
+        viralMultiplier: criteria.viralMultiplier.toString(),
+        days: criteria.timeRange
+      })
+      const res = await fetch(`/api/channels?${params.toString()}`)
+      
+      if (!res.ok) {
+        console.warn('Failed to load channels:', res.status, res.statusText)
+        // Don't throw error - just log it and use empty array
+        setChannels([])
+        return
+      }
+      
+      const data = await res.json()
+      const rows = Array.isArray(data?.rows) ? data.rows : []
+      const active = rows.filter((r: any) => r.isActive)
+      const mapped: UiChannel[] = active.map((r: any) => ({
+        id: r.id,
+        name: r.title,
+        handle: r.handle || "",
+        subscribers: Number(r.subscriberCount || 0),
+        avatar: r.thumbnailUrl || "/placeholder.svg?height=40&width=40&text=CH",
+        totalVideos: Number(r.videoCount || 0),
+        totalViews: Number(r.totalViews || 0),
+        avgViews: Number(r.avgViews || 0),
+        viralVideos: Number(r.viralVideoCount || 0),
+        platform: r.platform || 'youtube',
+      }))
+      setChannels(mapped)
+    } catch (error) {
+      console.warn('Error loading channels:', error)
+      // Don't show error to user - just silently fail and keep existing channels
+      // This prevents errors from breaking the channel addition flow
+    }
   }
 
   useEffect(() => {
@@ -189,6 +203,10 @@ export default function HomePage() {
 
       const result = await res.json()
       setNewChannelUrl("")
+      
+      // Add a small delay to ensure the database transaction is committed
+      // before refreshing the channel list
+      await new Promise(resolve => setTimeout(resolve, 500))
       await loadChannels()
 
       toast({

@@ -230,20 +230,36 @@ export default function ChannelDashboard() {
                   <AvatarFallback className="text-2xl">{channel.title.slice(0, 2)}</AvatarFallback>
                 </Avatar>
                 <div className="flex-1">
-                  <h1 className="text-3xl font-bold mb-2">{channel.title}</h1>
-                  <p className="text-muted-foreground mb-4">{channel.handle}</p>
-                  <p className="text-sm text-muted-foreground mb-4"></p>
+                  <h1 className="text-3xl font-bold mb-2">
+                    {channel.title}
+                    {channel.verified && (
+                      <Badge variant="secondary" className="ml-2">
+                        ✓ Verified
+                      </Badge>
+                    )}
+                  </h1>
+                  <p className="text-muted-foreground mb-2">{channel.handle}</p>
+                  {channel.biography && (
+                    <p className="text-sm text-muted-foreground mb-4">{channel.biography}</p>
+                  )}
+                  {channel.businessCategoryName && (
+                    <p className="text-xs text-muted-foreground mb-4">{channel.businessCategoryName}</p>
+                  )}
                   
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="flex items-center gap-2">
                       <Users className="h-4 w-4 text-muted-foreground" />
                       <span className="font-semibold">{formatNumber(channel.subscriberCount || 0)}</span>
-                      <span className="text-sm text-muted-foreground">subscribers</span>
+                      <span className="text-sm text-muted-foreground">
+                        {channel.platform === 'instagram' ? 'followers' : 'subscribers'}
+                      </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Play className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-semibold">{formatNumber(channel.videoCount || 0)}</span>
-                      <span className="text-sm text-muted-foreground">videos</span>
+                      <span className="font-semibold">{formatNumber(channel.videoCount || channel.postsCount || 0)}</span>
+                      <span className="text-sm text-muted-foreground">
+                        {channel.platform === 'instagram' ? 'posts' : 'videos'}
+                      </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Eye className="h-4 w-4 text-muted-foreground" />

@@ -58,6 +58,13 @@ export function upsertChannel(channel) {
   try { db.exec('ALTER TABLE channels ADD COLUMN isActive INTEGER DEFAULT 1'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN thumbnailUrl TEXT'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN platform TEXT DEFAULT "youtube"'); } catch {}
+  // Instagram profile fields
+  try { db.exec('ALTER TABLE channels ADD COLUMN biography TEXT'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN postsCount INTEGER'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN followsCount INTEGER'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN verified INTEGER DEFAULT 0'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN businessCategoryName TEXT'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN externalUrls TEXT'); } catch {}
   
   // Migrate videos table for Instagram support
   try { db.exec('ALTER TABLE videos ADD COLUMN platform TEXT DEFAULT "youtube"'); } catch {}
@@ -70,17 +77,35 @@ export function upsertChannel(channel) {
   try { db.exec('ALTER TABLE videos ADD COLUMN localImageUrl TEXT'); } catch {}
 
   const stmt = db.prepare(`
-    INSERT INTO channels (id, title, handle, subscriberCount, isActive, thumbnailUrl, platform)
-    VALUES (@id, @title, @handle, @subscriberCount, COALESCE(@isActive, 1), @thumbnailUrl, COALESCE(@platform, 'youtube'))
+    INSERT INTO channels (id, title, handle, subscriberCount, isActive, thumbnailUrl, platform, biography, postsCount, followsCount, verified, businessCategoryName, externalUrls)
+    VALUES (@id, @title, @handle, @subscriberCount, COALESCE(@isActive, 1), @thumbnailUrl, COALESCE(@platform, 'youtube'), @biography, @postsCount, @followsCount, COALESCE(@verified, 0), @businessCategoryName, @externalUrls)
     ON CONFLICT(id) DO UPDATE SET
       title=excluded.title,
       handle=excluded.handle,
       subscriberCount=COALESCE(excluded.subscriberCount, channels.subscriberCount),
       isActive=COALESCE(excluded.isActive, channels.isActive),
       thumbnailUrl=COALESCE(excluded.thumbnailUrl, channels.thumbnailUrl),
-      platform=COALESCE(excluded.platform, channels.platform)
+      platform=COALESCE(excluded.platform, channels.platform),
+      biography=COALESCE(excluded.biography, channels.biography),
+      postsCount=COALESCE(excluded.postsCount, channels.postsCount),
+      followsCount=COALESCE(excluded.followsCount, channels.followsCount),
+      verified=COALESCE(excluded.verified, channels.verified),
+      businessCategoryName=COALESCE(excluded.businessCategoryName, channels.businessCategoryName),
+      externalUrls=COALESCE(excluded.externalUrls, channels.externalUrls)
   `);
-  const withDefaults = { subscriberCount: null, isActive: 1, thumbnailUrl: null, platform: 'youtube', ...channel };
+  const withDefaults = { 
+    subscriberCount: null, 
+    isActive: 1, 
+    thumbnailUrl: null, 
+    platform: 'youtube', 
+    biography: null,
+    postsCount: null,
+    followsCount: null,
+    verified: 0,
+    businessCategoryName: null,
+    externalUrls: null,
+    ...channel 
+  };
   stmt.run(withDefaults);
 }
 
@@ -189,6 +214,13 @@ export function listChannels() {
   try { db.exec('ALTER TABLE channels ADD COLUMN isActive INTEGER DEFAULT 1'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN thumbnailUrl TEXT'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN platform TEXT DEFAULT "youtube"'); } catch {}
+  // Instagram profile fields
+  try { db.exec('ALTER TABLE channels ADD COLUMN biography TEXT'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN postsCount INTEGER'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN followsCount INTEGER'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN verified INTEGER DEFAULT 0'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN businessCategoryName TEXT'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN externalUrls TEXT'); } catch {}
   // Default existing channels to YouTube
   try { db.exec('UPDATE channels SET platform = "youtube" WHERE platform IS NULL'); } catch {}
 
@@ -197,6 +229,9 @@ export function listChannels() {
            COALESCE(c.isActive, 1) AS isActive,
            c.thumbnailUrl AS thumbnailUrl,
            COALESCE(c.platform, 'youtube') AS platform,
+           c.biography, c.postsCount, c.followsCount, 
+           COALESCE(c.verified, 0) AS verified,
+           c.businessCategoryName, c.externalUrls,
            (SELECT MAX(lastSyncedAt) FROM videos v WHERE v.channelId = c.id) AS lastSyncedAt,
            (SELECT COUNT(1) FROM videos v WHERE v.channelId = c.id) AS videoCount,
            (SELECT SUM(COALESCE(viewCount,0)) FROM videos v WHERE v.channelId = c.id) AS totalViews,
@@ -219,6 +254,13 @@ export function getChannel(id) {
   try { db.exec('ALTER TABLE channels ADD COLUMN isActive INTEGER DEFAULT 1'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN thumbnailUrl TEXT'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN platform TEXT DEFAULT "youtube"'); } catch {}
+  // Instagram profile fields
+  try { db.exec('ALTER TABLE channels ADD COLUMN biography TEXT'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN postsCount INTEGER'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN followsCount INTEGER'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN verified INTEGER DEFAULT 0'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN businessCategoryName TEXT'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN externalUrls TEXT'); } catch {}
   // Default existing channels to YouTube
   try { db.exec('UPDATE channels SET platform = "youtube" WHERE platform IS NULL'); } catch {}
 
@@ -228,6 +270,9 @@ export function getChannel(id) {
            COALESCE(c.isActive,1) AS isActive,
            c.thumbnailUrl AS thumbnailUrl,
            COALESCE(c.platform, 'youtube') AS platform,
+           c.biography, c.postsCount, c.followsCount, 
+           COALESCE(c.verified, 0) AS verified,
+           c.businessCategoryName, c.externalUrls,
            (SELECT MAX(lastSyncedAt) FROM videos v WHERE v.channelId = c.id) AS lastSyncedAt,
            COALESCE((SELECT COUNT(1) FROM videos v WHERE v.channelId = c.id), 0) AS videoCount,
            COALESCE((SELECT SUM(COALESCE(viewCount,0)) FROM videos v WHERE v.channelId = c.id), 0) AS totalViews

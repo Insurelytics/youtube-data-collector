@@ -6,9 +6,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { ensureDatabase, upsertVideos, queryVideos, upsertChannel, listChannels, removeChannel, getChannel, getChannelTrends, getTopVideos, getSpecialVideos, getViralVideoCount, queryVideosAdvanced } from './storage.js';
+import { ensureDatabase, upsertVideos, queryVideos, upsertChannel, listChannels, removeChannel, getChannel, getChannelTrends, getTopVideos, getSpecialVideos, getViralVideoCount, queryVideosAdvanced, createSyncJob, listJobs, getJobStatus } from './storage.js';
 import { syncChannelVideos as syncYouTubeVideos, getChannelByHandle as getYouTubeChannelByHandle } from './youtube.js';
 import { syncChannelReels as syncInstagramReels, getChannelByHandle as getInstagramChannelByHandle } from './instagram.js';
+import QueueManager from './queue-manager.js';
+import { initScheduler, triggerScheduledSync } from './schedule.js';
+import { downloadImage } from './image-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,44 +27,15 @@ if (!fs.existsSync(IMAGES_DIR)) {
   fs.mkdirSync(IMAGES_DIR, { recursive: true });
 }
 
-// Download image from URL and save to local filesystem
-async function downloadImage(imageUrl, videoId) {
-  try {
-    if (!imageUrl || !imageUrl.includes('instagram')) return null;
-    
-    const response = await fetch(imageUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      }
-    });
-
-    if (!response.ok) {
-      console.warn(`Failed to download image for ${videoId}: ${response.status}`);
-      return null;
-    }
-
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.startsWith('image/')) {
-      console.warn(`Invalid content type for ${videoId}: ${contentType}`);
-      return null;
-    }
-
-    const extension = contentType.split('/')[1] || 'jpg';
-    const filename = `${videoId}.${extension}`;
-    const filepath = path.join(IMAGES_DIR, filename);
-
-    const buffer = await response.arrayBuffer();
-    fs.writeFileSync(filepath, Buffer.from(buffer));
-
-    return `/api/images/${filename}`;
-  } catch (error) {
-    console.error(`Error downloading image for ${videoId}:`, error);
-    return null;
-  }
-}
 
 function createServer() {
   ensureDatabase();
+
+  // Initialize queue manager
+  const queueManager = new QueueManager();
+
+  // Initialize scheduler
+  initScheduler();
 
   const app = express();
   app.use(express.json());
@@ -84,63 +58,22 @@ function createServer() {
   });
 
   app.get('/api/sync', async (req, res) => {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) return res.status(400).json({ error: 'Missing API_KEY env' });
     if (!req.query.handle) return res.status(400).json({ error: 'Missing handle' });
     const handle = req.query.handle.toString();
     const platform = (req.query.platform || 'youtube').toString();
     const sinceDays = Number(req.query.sinceDays || MAX_SYNC_DAYS);
 
-    try {
-      let result;
-      if (platform === 'instagram') {
-        result = await syncInstagramReels({ handle, sinceDays });
-        
-        // Download images for Instagram reels
-        if (result.reels) {
-          console.log(`Downloading ${result.reels.length} Instagram reel images...`);
-          for (const reel of result.reels) {
-            if (reel.displayUrl) {
-              const localImageUrl = await downloadImage(reel.displayUrl, reel.id);
-              if (localImageUrl) {
-                reel.localImageUrl = localImageUrl;
-              }
-            }
-          }
-        }
-      } else {
-        // Default to YouTube
-        result = await syncYouTubeVideos({ apiKey, handle, sinceDays });
-      }
+    // Validate API key for YouTube
+    if (platform === 'youtube' && !process.env.API_KEY) {
+      return res.status(400).json({ error: 'Missing API_KEY env' });
+    }
 
-      const { channelId, channelTitle, subscriberCount, thumbnailUrl, videos, reels, profileData } = result;
-      const content = videos || reels || [];
-      
-      const channelData = { 
-        id: channelId, 
-        title: channelTitle, 
-        handle, 
-        subscriberCount, 
-        isActive: 1, 
-        thumbnailUrl, 
-        platform 
-      };
-      
-      // Add Instagram profile data if available
-      if (profileData) {
-        channelData.biography = profileData.biography;
-        channelData.postsCount = profileData.postsCount;
-        channelData.followsCount = profileData.followsCount;
-        channelData.verified = profileData.verified ? 1 : 0;
-        channelData.businessCategoryName = profileData.businessCategoryName;
-        channelData.externalUrls = profileData.externalUrls ? JSON.stringify(profileData.externalUrls) : null;
-      }
-      
-      upsertChannel(channelData);
-      upsertVideos(content);
-      res.json({ ok: true, channelId, channelTitle, count: content.length });
+    try {
+      // Create a sync job instead of processing directly
+      const jobId = createSyncJob({ handle, platform, sinceDays });
+      res.json({ ok: true, jobId, message: 'Sync job queued' });
     } catch (err) {
-      res.status(500).json({ error: err?.message || 'Sync failed' });
+      res.status(500).json({ error: err?.message || 'Failed to queue sync job' });
     }
   });
 
@@ -222,62 +155,21 @@ function createServer() {
   });
 
   app.post('/api/channels', async (req, res) => {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) return res.status(400).json({ error: 'Missing API_KEY env' });
     const handle = (req.body?.handle || '').toString();
     if (!handle) return res.status(400).json({ error: 'handle required' });
     const platform = (req.body?.platform || 'youtube').toString();
 
-    try {
-      let result;
-      if (platform === 'instagram') {
-        result = await syncInstagramReels({ handle, sinceDays: MAX_SYNC_DAYS });
-        
-        // Download images for Instagram reels
-        if (result.reels) {
-          console.log(`Downloading ${result.reels.length} Instagram reel images...`);
-          for (const reel of result.reels) {
-            if (reel.displayUrl) {
-              const localImageUrl = await downloadImage(reel.displayUrl, reel.id);
-              if (localImageUrl) {
-                reel.localImageUrl = localImageUrl;
-              }
-            }
-          }
-        }
-      } else {
-        // Default to YouTube
-        result = await syncYouTubeVideos({ apiKey, handle, sinceDays: MAX_SYNC_DAYS });
-      }
+    // Validate API key for YouTube
+    if (platform === 'youtube' && !process.env.API_KEY) {
+      return res.status(400).json({ error: 'Missing API_KEY env' });
+    }
 
-      const { channelId, channelTitle, subscriberCount, thumbnailUrl, videos, reels, profileData } = result;
-      const content = videos || reels || [];
-      
-      const channelData = { 
-        id: channelId, 
-        title: channelTitle, 
-        handle, 
-        subscriberCount, 
-        isActive: 1, 
-        thumbnailUrl, 
-        platform 
-      };
-      
-      // Add Instagram profile data if available
-      if (profileData) {
-        channelData.biography = profileData.biography;
-        channelData.postsCount = profileData.postsCount;
-        channelData.followsCount = profileData.followsCount;
-        channelData.verified = profileData.verified ? 1 : 0;
-        channelData.businessCategoryName = profileData.businessCategoryName;
-        channelData.externalUrls = profileData.externalUrls ? JSON.stringify(profileData.externalUrls) : null;
-      }
-      
-      upsertChannel(channelData);
-      upsertVideos(content);
-      res.json({ ok: true, channelId, channelTitle, count: content.length });
+    try {
+      // Create a sync job instead of processing directly
+      const jobId = createSyncJob({ handle, platform, sinceDays: MAX_SYNC_DAYS });
+      res.json({ ok: true, jobId, message: 'Channel sync job queued' });
     } catch (e) {
-      res.status(500).json({ error: e?.message || 'Add failed' });
+      res.status(500).json({ error: e?.message || 'Failed to queue channel sync job' });
     }
   });
 
@@ -320,7 +212,47 @@ function createServer() {
     res.json({ total, page, pageSize, rows });
   });
 
+  // Job management routes
+  app.get('/api/jobs', (req, res) => {
+    try {
+      const limit = Math.min(200, Number(req.query.limit || 50));
+      const offset = Number(req.query.offset || 0);
+      const result = listJobs({ limit, offset });
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error.message || 'Failed to fetch jobs' });
+    }
+  });
 
+  app.get('/api/jobs/:id', (req, res) => {
+    try {
+      const jobId = Number(req.params.id);
+      if (isNaN(jobId)) return res.status(400).json({ error: 'Invalid job ID' });
+      
+      const job = getJobStatus(jobId);
+      if (!job) return res.status(404).json({ error: 'Job not found' });
+      
+      res.json(job);
+    } catch (error) {
+      res.status(500).json({ error: error.message || 'Failed to fetch job' });
+    }
+  });
+
+  app.get('/api/queue/status', (req, res) => {
+    res.json({
+      isProcessing: queueManager.isCurrentlyProcessing(),
+      currentJobId: queueManager.getCurrentJobId()
+    });
+  });
+
+  app.post('/api/schedule/trigger', async (req, res) => {
+    try {
+      await triggerScheduledSync();
+      res.json({ ok: true, message: 'Scheduled sync triggered successfully' });
+    } catch (error) {
+      res.status(500).json({ error: error.message || 'Failed to trigger scheduled sync' });
+    }
+  });
 
   app.listen(PORT, () => {
     console.log(`Server listening on http://localhost:${PORT}`);

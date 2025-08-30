@@ -1,0 +1,215 @@
+// Schedule management for YouTube Data Collector
+// Follows the same pattern as the example project
+
+import cron from 'node-cron';
+import { listChannels, createSyncJob, getJobStatus } from './storage.js';
+
+const SCHEDULED_HOUR = process.env.SCHEDULED_HOUR ? parseInt(process.env.SCHEDULED_HOUR) : 4; // Default 4 AM
+
+let isJobRunning = false; // Lock to prevent concurrent job execution
+
+async function getCurrentDate() {
+    if (process.env.TEST_DATE) {
+        return new Date(process.env.TEST_DATE);
+    }
+    return new Date();
+}
+
+async function waitForJobsToComplete(jobIds, maxWaitHours = 1) {
+    const checkInterval = 3000; // Check every 3 seconds
+    const maxWaitTime = maxWaitHours * 60 * 60 * 1000; // Max wait time
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < maxWaitTime) {
+        const jobStatuses = await Promise.all(
+            jobIds.map(jobId => getJobStatus(jobId))
+        );
+        
+        const pendingOrRunning = jobStatuses.filter(job => 
+            job && (job.status === 'pending' || job.status === 'running')
+        );
+        
+        if (pendingOrRunning.length === 0) {
+            console.log('All jobs completed');
+            return jobStatuses;
+        }
+        
+        console.log(`Waiting for ${pendingOrRunning.length} jobs to complete...`);
+        await new Promise(resolve => setTimeout(resolve, checkInterval));
+    }
+    
+    throw new Error('Jobs did not complete within maximum wait time');
+}
+
+async function processAllJobs() {
+    const channels = listChannels().filter(ch => ch.isActive);
+    const jobIds = [];
+    
+    if (channels.length === 0) {
+        console.log('No active channels found, skipping...');
+        // TODO: In the future, send email notification about no active channels
+        return;
+    }
+    
+    console.log(`Creating sync jobs for ${channels.length} active channels...`);
+    
+    for (const channel of channels) {
+        const jobId = createSyncJob({ 
+            handle: channel.handle, 
+            platform: channel.platform || 'youtube',
+            sinceDays: 7 // Sync last week's content for scheduled jobs
+        });
+        jobIds.push(jobId);
+        console.log(`Created job for ${channel.title} (${channel.handle}) with ID: ${jobId}`);
+    }
+    
+    console.log(`Created ${jobIds.length} jobs, waiting for completion...`);
+    
+    try {
+        await waitForJobsToComplete(jobIds, 4); // wait up to 4 hours for all sync jobs to complete
+        console.log("All scheduled sync jobs completed successfully");
+        
+        // TODO: In the future, add email notifications with sync results
+        // TODO: Add analytics/reporting on sync performance
+        
+    } catch (error) {
+        console.error('Error waiting for scheduled jobs to complete:', error);
+        // TODO: In the future, send email to admin warning about sync issues
+        throw error;
+    }
+}
+
+async function shouldRunJob() {
+    // TODO: In the future, this will check email settings from database
+    // For now, we'll use environment variables or return false to disable scheduling
+    
+    const enableScheduling = process.env.ENABLE_SCHEDULING === 'true';
+    const frequency = process.env.SCHEDULE_FREQUENCY || 'daily'; // daily, weekly, monthly
+    const lastJobRunStr = process.env.LAST_JOB_RUN; // ISO string
+    
+    if (!enableScheduling) {
+        return false;
+    }
+    
+    if (!lastJobRunStr) {
+        console.log('No lastJobRun found, running now');
+        return true;
+    }
+    
+    const lastJobRunDate = new Date(lastJobRunStr);
+    const now = await getCurrentDate();
+    
+    if (frequency === 'daily') {
+        // Check if it's the following day and after scheduled hour
+        const isNextDay = now.getDate() !== lastJobRunDate.getDate() || 
+                         now.getMonth() !== lastJobRunDate.getMonth() || 
+                         now.getFullYear() !== lastJobRunDate.getFullYear();
+        const isAfterScheduledHour = now.getHours() >= SCHEDULED_HOUR;
+        
+        if (isNextDay && isAfterScheduledHour) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+    
+    if (frequency === 'weekly') {
+        const weeklyDay = parseInt(process.env.SCHEDULE_WEEKLY_DAY || '0'); // 0 = Sunday
+        
+        // Check if it's the correct day of week and after scheduled hour
+        const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const isCorrectDay = currentDay === weeklyDay;
+        const isAfterScheduledHour = now.getHours() >= SCHEDULED_HOUR;
+        
+        // Check if at least a week has passed since last run
+        const weekInMs = 7 * 24 * 60 * 60 * 1000;
+        const timeSinceLastRun = now.getTime() - lastJobRunDate.getTime();
+        const hasBeenAWeek = timeSinceLastRun >= weekInMs;
+        
+        if (isCorrectDay && isAfterScheduledHour && hasBeenAWeek) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+    
+    if (frequency === 'monthly') {
+        const monthlyDay = parseInt(process.env.SCHEDULE_MONTHLY_DAY || '1'); // 1st of month
+        
+        // Check if it's the correct day of month and after scheduled hour
+        const currentDate = now.getDate();
+        const isCorrectDate = currentDate === monthlyDay;
+        const isAfterScheduledHour = now.getHours() >= SCHEDULED_HOUR;
+        
+        // Check if at least a month has passed since last run
+        const lastRunMonth = lastJobRunDate.getMonth();
+        const lastRunYear = lastJobRunDate.getFullYear();
+        const currentMonth = now.getMonth();
+        const currentYear = now.getFullYear();
+        
+        const hasBeenAMonth = (currentYear > lastRunYear) || 
+                             (currentYear === lastRunYear && currentMonth > lastRunMonth);
+        
+        if (isCorrectDate && isAfterScheduledHour && hasBeenAMonth) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+    
+    console.log('Invalid frequency:', frequency);
+    return false;
+}
+
+async function safeRunJob() {
+    // Prevent concurrent job execution to avoid complex errors and race conditions
+    if (isJobRunning) {
+        console.log('Scheduled job is already running, skipping...');
+        return;
+    }
+    
+    isJobRunning = true;
+    console.log('Starting scheduled sync job...');
+    
+    try {
+        const shouldRun = await shouldRunJob();
+        if (shouldRun) {
+            await processAllJobs();
+            // TODO: In the future, update lastJobRun in database settings
+            // For now, we could set an environment variable or log it
+            console.log('Scheduled sync job completed successfully');
+        } else {
+            // Uncomment for debugging: console.log('Scheduled job not needed at this time');
+        }
+    } catch (error) {
+        console.error('Error during scheduled job execution:', error);
+    } finally {
+        isJobRunning = false;
+    }
+}
+
+async function initScheduler() {
+    console.log('Initializing scheduler...');
+    
+    // Run once on server start (only if enabled)
+    await safeRunJob();
+    
+    // Run every 5 minutes to check if a scheduled job should run
+    cron.schedule('*/5 * * * *', async () => {
+        await safeRunJob();
+    });
+    
+    console.log('Scheduler initialized');
+}
+
+// Export for manual triggering (useful for testing or admin actions)
+export async function triggerScheduledSync() {
+    if (isJobRunning) {
+        throw new Error('A scheduled sync job is already running');
+    }
+    
+    console.log('Manually triggering scheduled sync...');
+    await processAllJobs();
+}
+
+export { initScheduler };

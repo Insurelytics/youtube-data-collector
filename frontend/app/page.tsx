@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Plus, Trash2, TrendingUp, Users, Eye, MessageCircle, Heart, ExternalLink, RefreshCcw, Settings, Flame, Clock, Loader2 } from 'lucide-react'
+import { Plus, Trash2, TrendingUp, Users, Eye, MessageCircle, Heart, ExternalLink, RefreshCcw, Settings, Flame, Clock, Loader2, Mail, Save, Zap, User } from 'lucide-react'
 import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
@@ -12,6 +12,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
+import { Separator } from "@/components/ui/separator"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useToast } from "@/hooks/use-toast"
@@ -109,6 +111,24 @@ function getGlobalCriteria() {
   }
 }
 
+function getScheduleSettings() {
+  if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem('youtube-schedule-settings')
+    if (stored) {
+      try {
+        return JSON.parse(stored)
+      } catch {}
+    }
+  }
+  return {
+    scrapeFrequency: "daily",
+    emailNotifications: true,
+    emailAddresses: "user@example.com",
+    maxVideosPerEmail: "10",
+    sendTime: "09:00",
+  }
+}
+
 type LoadingState = {
   type: 'adding' | 'syncing' | 'removing' | null
   channelId?: string
@@ -121,6 +141,7 @@ export default function HomePage() {
   const [selectedPlatform, setSelectedPlatform] = useState<"instagram" | "youtube">("instagram")
   const [loadingState, setLoadingState] = useState<LoadingState>({ type: null })
   const [criteria, setCriteria] = useState(getGlobalCriteria())
+  const [scheduleSettings, setScheduleSettings] = useState(getScheduleSettings())
   const { toast } = useToast()
 
   async function loadChannels() {
@@ -310,6 +331,23 @@ export default function HomePage() {
     }
   }
 
+  const handleScheduleChange = (field: string, value: string | boolean) => {
+    const newSettings = { ...scheduleSettings, [field]: value }
+    setScheduleSettings(newSettings)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('youtube-schedule-settings', JSON.stringify(newSettings))
+    }
+  }
+
+  const handleSaveSchedule = () => {
+    // TODO: Implement backend API call to save schedule settings
+    console.log("Schedule settings saved:", scheduleSettings)
+    toast({
+      title: "Settings saved",
+      description: "Your schedule settings have been saved successfully."
+    })
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto p-6">
@@ -319,11 +357,18 @@ export default function HomePage() {
         </div>
 
         <Tabs defaultValue="channels" className="space-y-6">
-          <TabsList className="grid grid-cols-2 w-72">
-            <TabsTrigger value="channels">Channels</TabsTrigger>
+          <TabsList className="grid grid-cols-3 w-96">
+            <TabsTrigger value="channels">
+              <User className="h-4 w-4 mr-2" />
+              Channels
+            </TabsTrigger>
             <TabsTrigger value="criteria">
               <Settings className="h-4 w-4 mr-2" />
               Criteria
+            </TabsTrigger>
+            <TabsTrigger value="schedule">
+              <Clock className="h-4 w-4 mr-2" />
+              Schedule
             </TabsTrigger>
           </TabsList>
 
@@ -680,6 +725,140 @@ export default function HomePage() {
                   >
                     Reset to Defaults
                   </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="schedule" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="h-5 w-5" />
+                  Scrape Schedule Settings
+                </CardTitle>
+                <CardDescription>
+                  Configure how often to check for new content and when to send email notifications
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-6">
+                  {/* Scraping Frequency */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Clock className="h-5 w-5" />
+                        Data Scraping Frequency
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="scrape-frequency">Check Frequency</Label>
+                        <Select
+                          value={scheduleSettings.scrapeFrequency}
+                          onValueChange={(value) => handleScheduleChange("scrapeFrequency", value)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select frequency" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="daily">Daily</SelectItem>
+                            <SelectItem value="2days">Every 2 Days</SelectItem>
+                            <SelectItem value="weekly">Weekly</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Email Notifications */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Zap className="h-5 w-5" />
+                        Viral Video Notifications
+                      </CardTitle>
+                      <CardDescription>Get notified when videos go viral (exceed {criteria.viralMultiplier}x average views)</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <Label className="text-base">Enable Email Notifications</Label>
+                          <p className="text-sm text-muted-foreground">Receive emails when viral videos are detected</p>
+                        </div>
+                        <Switch
+                          checked={scheduleSettings.emailNotifications}
+                          onCheckedChange={(checked) => handleScheduleChange("emailNotifications", checked)}
+                        />
+                      </div>
+
+                      {scheduleSettings.emailNotifications && (
+                        <>
+                          <Separator />
+                          <div className="space-y-2">
+                            <Label htmlFor="email">Email Addresses</Label>
+                            <Input
+                              id="email"
+                              type="text"
+                              value={scheduleSettings.emailAddresses}
+                              onChange={(e) => handleScheduleChange("emailAddresses", e.target.value)}
+                              placeholder="email1@example.com, email2@example.com"
+                            />
+                            <p className="text-xs text-muted-foreground">Separate multiple email addresses with commas</p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="max-videos">Max Videos Per Email</Label>
+                            <Select
+                              value={scheduleSettings.maxVideosPerEmail}
+                              onValueChange={(value) => handleScheduleChange("maxVideosPerEmail", value)}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select max videos" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="5">5 videos</SelectItem>
+                                <SelectItem value="10">10 videos</SelectItem>
+                                <SelectItem value="15">15 videos</SelectItem>
+                                <SelectItem value="20">20 videos</SelectItem>
+                                <SelectItem value="unlimited">Unlimited</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Email Send Time */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Mail className="h-5 w-5" />
+                        Email Send Time
+                      </CardTitle>
+                      <CardDescription>What time of day should we send your email notifications?</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        <Label htmlFor="send-time">Preferred Send Time</Label>
+                        <Input
+                          id="send-time"
+                          type="time"
+                          value={scheduleSettings.sendTime}
+                          onChange={(e) => handleScheduleChange("sendTime", e.target.value)}
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Save Button */}
+                  <div className="flex justify-end">
+                    <Button onClick={handleSaveSchedule} className="flex items-center gap-2">
+                      <Save className="h-4 w-4" />
+                      Save Settings
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>

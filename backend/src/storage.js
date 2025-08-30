@@ -63,6 +63,12 @@ export function ensureDatabase() {
       updated_videos INTEGER DEFAULT 0
     );
 
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_videos_channel_date ON videos(channelId, publishedAt DESC);
     CREATE INDEX IF NOT EXISTS idx_videos_views ON videos(viewCount DESC);
     CREATE INDEX IF NOT EXISTS idx_sync_jobs_status ON sync_jobs(status);
@@ -510,5 +516,34 @@ export function listJobs({ limit = 50, offset = 0 } = {}) {
   `).all(limit, offset);
   
   return { total, jobs };
+}
+
+// Settings management
+export function getSetting(key) {
+  ensureDatabase();
+  const result = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  return result ? result.value : null;
+}
+
+export function setSetting(key, value) {
+  ensureDatabase();
+  const nowIso = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO settings (key, value, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET
+      value = excluded.value,
+      updated_at = excluded.updated_at
+  `).run(key, value, nowIso);
+}
+
+export function getSettings() {
+  ensureDatabase();
+  const results = db.prepare('SELECT key, value FROM settings').all();
+  const settings = {};
+  results.forEach(row => {
+    settings[row.key] = row.value;
+  });
+  return settings;
 }
 

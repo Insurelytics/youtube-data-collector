@@ -2,9 +2,23 @@
 // Follows the same pattern as the example project
 
 import cron from 'node-cron';
-import { listChannels, createSyncJob, getJobStatus } from './storage.js';
+import { listChannels, createSyncJob, getJobStatus, getSetting, setSetting } from './storage.js';
 
-const SCHEDULED_HOUR = process.env.SCHEDULED_HOUR ? parseInt(process.env.SCHEDULED_HOUR) : 4; // Default 4 AM
+function getScheduledHour() {
+    const scheduleSettingsStr = getSetting('scheduleSettings');
+    if (scheduleSettingsStr) {
+        try {
+            const scheduleSettings = JSON.parse(scheduleSettingsStr);
+            if (scheduleSettings.sendTime) {
+                const [hour] = scheduleSettings.sendTime.split(':');
+                return parseInt(hour) || 4;
+            }
+        } catch (e) {
+            console.warn('Failed to parse schedule settings for sendTime:', e);
+        }
+    }
+    return process.env.SCHEDULED_HOUR ? parseInt(process.env.SCHEDULED_HOUR) : 4; // Default 4 AM
+}
 
 let isJobRunning = false; // Lock to prevent concurrent job execution
 
@@ -53,6 +67,9 @@ async function processAllJobs() {
     
     console.log(`Creating sync jobs for ${channels.length} active channels...`);
     
+    // Update lastJobRun immediately to prevent duplicate job creation
+    setSetting('lastJobRun', new Date().toISOString());
+    
     for (const channel of channels) {
         const jobId = createSyncJob({ 
             handle: channel.handle, 
@@ -80,12 +97,23 @@ async function processAllJobs() {
 }
 
 async function shouldRunJob() {
-    // TODO: In the future, this will check email settings from database
-    // For now, we'll use environment variables or return false to disable scheduling
+    // Read settings from database with fallback to environment variables
+    const scheduleSettingsStr = getSetting('scheduleSettings');
+    let scheduleSettings = {};
     
-    const enableScheduling = process.env.ENABLE_SCHEDULING === 'true';
-    const frequency = process.env.SCHEDULE_FREQUENCY || 'daily'; // daily, weekly, monthly
-    const lastJobRunStr = process.env.LAST_JOB_RUN; // ISO string
+    if (scheduleSettingsStr) {
+        try {
+            scheduleSettings = JSON.parse(scheduleSettingsStr);
+        } catch (e) {
+            console.warn('Failed to parse schedule settings:', e);
+        }
+    }
+    
+    // Get settings with fallbacks
+    const enableScheduling = scheduleSettings.emailNotifications || process.env.ENABLE_SCHEDULING === 'true';
+    const frequency = scheduleSettings.scrapeFrequency || process.env.SCHEDULE_FREQUENCY || 'daily';
+    const lastJobRunStr = getSetting('lastJobRun') || process.env.LAST_JOB_RUN; // ISO string
+    console.log('lastJobRunStr', lastJobRunStr);
     
     if (!enableScheduling) {
         return false;
@@ -104,9 +132,23 @@ async function shouldRunJob() {
         const isNextDay = now.getDate() !== lastJobRunDate.getDate() || 
                          now.getMonth() !== lastJobRunDate.getMonth() || 
                          now.getFullYear() !== lastJobRunDate.getFullYear();
-        const isAfterScheduledHour = now.getHours() >= SCHEDULED_HOUR;
+        const isAfterScheduledHour = now.getHours() >= getScheduledHour();
         
         if (isNextDay && isAfterScheduledHour) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+    
+    if (frequency === '2days') {
+        // Check if at least 2 days have passed since last run
+        const twoDaysInMs = 2 * 24 * 60 * 60 * 1000;
+        const timeSinceLastRun = now.getTime() - lastJobRunDate.getTime();
+        const hasBeenTwoDays = timeSinceLastRun >= twoDaysInMs;
+        const isAfterScheduledHour = now.getHours() >= getScheduledHour();
+        
+        if (hasBeenTwoDays && isAfterScheduledHour) {
             return true;
         } else {
             return false;
@@ -119,7 +161,7 @@ async function shouldRunJob() {
         // Check if it's the correct day of week and after scheduled hour
         const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
         const isCorrectDay = currentDay === weeklyDay;
-        const isAfterScheduledHour = now.getHours() >= SCHEDULED_HOUR;
+        const isAfterScheduledHour = now.getHours() >= getScheduledHour();
         
         // Check if at least a week has passed since last run
         const weekInMs = 7 * 24 * 60 * 60 * 1000;
@@ -139,7 +181,7 @@ async function shouldRunJob() {
         // Check if it's the correct day of month and after scheduled hour
         const currentDate = now.getDate();
         const isCorrectDate = currentDate === monthlyDay;
-        const isAfterScheduledHour = now.getHours() >= SCHEDULED_HOUR;
+        const isAfterScheduledHour = now.getHours() >= getScheduledHour();
         
         // Check if at least a month has passed since last run
         const lastRunMonth = lastJobRunDate.getMonth();
@@ -175,8 +217,6 @@ async function safeRunJob() {
         const shouldRun = await shouldRunJob();
         if (shouldRun) {
             await processAllJobs();
-            // TODO: In the future, update lastJobRun in database settings
-            // For now, we could set an environment variable or log it
             console.log('Scheduled sync job completed successfully');
         } else {
             // Uncomment for debugging: console.log('Scheduled job not needed at this time');

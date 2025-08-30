@@ -114,15 +114,7 @@ function getGlobalCriteria() {
   }
 }
 
-function getScheduleSettings() {
-  if (typeof window !== 'undefined') {
-    const stored = localStorage.getItem('youtube-schedule-settings')
-    if (stored) {
-      try {
-        return JSON.parse(stored)
-      } catch {}
-    }
-  }
+function getDefaultScheduleSettings() {
   return {
     scrapeFrequency: "daily",
     emailNotifications: true,
@@ -144,7 +136,7 @@ export default function HomePage() {
   const [selectedPlatform, setSelectedPlatform] = useState<"instagram" | "youtube">("instagram")
   const [loadingState, setLoadingState] = useState<LoadingState>({ type: null })
   const [criteria, setCriteria] = useState(getGlobalCriteria())
-  const [scheduleSettings, setScheduleSettings] = useState(getScheduleSettings())
+  const [scheduleSettings, setScheduleSettings] = useState(getDefaultScheduleSettings())
   const { toast } = useToast()
 
   async function loadChannels() {
@@ -185,9 +177,37 @@ export default function HomePage() {
     }
   }
 
+  async function loadSettings() {
+    try {
+      const res = await fetch('/api/settings')
+      if (!res.ok) {
+        console.warn('Failed to load settings:', res.status, res.statusText)
+        return
+      }
+      
+      const settings = await res.json()
+      
+      // Parse schedule settings if they exist
+      if (settings.scheduleSettings) {
+        try {
+          const parsedScheduleSettings = JSON.parse(settings.scheduleSettings)
+          setScheduleSettings(parsedScheduleSettings)
+        } catch (e) {
+          console.warn('Failed to parse schedule settings:', e)
+        }
+      }
+    } catch (error) {
+      console.warn('Error loading settings:', error)
+    }
+  }
+
   useEffect(() => {
     loadChannels()
   }, [criteria.viralMultiplier, criteria.timeRange])
+
+  useEffect(() => {
+    loadSettings()
+  }, [])
 
   async function addChannel() {
     const handle = extractHandle(newChannelUrl)
@@ -337,18 +357,37 @@ export default function HomePage() {
   const handleScheduleChange = (field: string, value: string | boolean) => {
     const newSettings = { ...scheduleSettings, [field]: value }
     setScheduleSettings(newSettings)
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('youtube-schedule-settings', JSON.stringify(newSettings))
-    }
   }
 
-  const handleSaveSchedule = () => {
-    // TODO: Implement backend API call to save schedule settings
-    console.log("Schedule settings saved:", scheduleSettings)
-    toast({
-      title: "Settings saved",
-      description: "Your schedule settings have been saved successfully."
-    })
+  const handleSaveSchedule = async () => {
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settings: {
+            scheduleSettings: scheduleSettings
+          }
+        })
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.error || 'Failed to save settings')
+      }
+
+      toast({
+        title: "Settings saved",
+        description: "Your schedule settings have been saved successfully."
+      })
+    } catch (error: any) {
+      console.error('Error saving settings:', error)
+      toast({
+        title: "Failed to save settings",
+        description: error?.message || "An unexpected error occurred.",
+        variant: "destructive"
+      })
+    }
   }
 
   return (

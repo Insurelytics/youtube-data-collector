@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { ensureDatabase, upsertVideos, queryVideos, upsertChannel, listChannels, removeChannel, getChannel, getChannelTrends, getTopVideos, getSpecialVideos, getViralVideoCount, queryVideosAdvanced, createSyncJob, listJobs, getJobStatus } from './storage.js';
+import { ensureDatabase, upsertVideos, queryVideos, upsertChannel, listChannels, removeChannel, getChannel, getChannelTrends, getTopVideos, getSpecialVideos, getViralVideoCount, queryVideosAdvanced, createSyncJob, listJobs, getJobStatus, getSetting, setSetting, getSettings } from './storage.js';
 import { syncChannelVideos as syncYouTubeVideos, getChannelByHandle as getYouTubeChannelByHandle } from './youtube.js';
 import { syncChannelReels as syncInstagramReels, getChannelByHandle as getInstagramChannelByHandle } from './instagram.js';
 import QueueManager from './queue-manager.js';
@@ -251,6 +251,34 @@ function createServer() {
       res.json({ ok: true, message: 'Scheduled sync triggered successfully' });
     } catch (error) {
       res.status(500).json({ error: error.message || 'Failed to trigger scheduled sync' });
+    }
+  });
+
+  // Settings API endpoints
+  app.get('/api/settings', (req, res) => {
+    try {
+      const settings = getSettings();
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ error: error.message || 'Failed to fetch settings' });
+    }
+  });
+
+  app.post('/api/settings', (req, res) => {
+    try {
+      const { settings } = req.body;
+      if (!settings || typeof settings !== 'object') {
+        return res.status(400).json({ error: 'Invalid settings object' });
+      }
+
+      // Save each setting individually
+      Object.entries(settings).forEach(([key, value]) => {
+        setSetting(key, JSON.stringify(value));
+      });
+
+      res.json({ ok: true, message: 'Settings saved successfully' });
+    } catch (error) {
+      res.status(500).json({ error: error.message || 'Failed to save settings' });
     }
   });
 

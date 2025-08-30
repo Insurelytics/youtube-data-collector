@@ -314,8 +314,8 @@ export default function HomePage() {
     <div className="min-h-screen bg-background">
       <div className="container mx-auto p-6">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">YouTube Analytics Dashboard</h1>
-          <p className="text-muted-foreground">Track and analyze your favorite YouTube channels</p>
+          <h1 className="text-3xl font-bold mb-2">Social Media Analytics Dashboard</h1>
+          <p className="text-muted-foreground">Track and analyze Instagram and YouTube channels</p>
         </div>
 
         <Tabs defaultValue="channels" className="space-y-6">
@@ -538,11 +538,11 @@ export default function HomePage() {
                             className="w-20"
                           />
                           <span className="text-sm text-muted-foreground">
-                            x subscriber count
+                            x average views
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          Videos need {criteria.viralMultiplier}x+ more views than subscriber count to be considered viral
+                          Videos need {criteria.viralMultiplier}x+ more views than average views to be considered viral
                         </p>
                       </div>
                     </div>
@@ -651,7 +651,7 @@ export default function HomePage() {
                       <div className="space-y-2">
                         <h4 className="font-medium text-sm">Viral Video Detection</h4>
                         <p className="text-sm text-muted-foreground">
-                          A channel with 100K subscribers needs <strong>{formatNumber(100000 * criteria.viralMultiplier)}</strong> views 
+                          A channel with 10K average views needs <strong>{formatNumber(10000 * criteria.viralMultiplier)}</strong> views 
                           for a video to be considered viral
                         </p>
                       </div>

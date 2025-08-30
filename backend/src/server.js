@@ -208,7 +208,7 @@ function createServer() {
         ...channel,
         viralVideoCount: getViralVideoCount({ 
           channelId: channel.id, 
-          subscriberCount: channel.subscriberCount, 
+          avgViews: channel.avgViews, 
           viralMultiplier,
           sinceIso
         })
@@ -299,7 +299,7 @@ function createServer() {
       const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
       const trends = getChannelTrends({ channelId, sinceIso });
       const top = getTopVideos({ channelId, sinceIso, likeWeight, commentWeight });
-      const special = getSpecialVideos({ channelId, subscriberCount: ch.subscriberCount, sinceIso, viralMultiplier });
+      const special = getSpecialVideos({ channelId, avgViews: ch.avgViews, sinceIso, viralMultiplier });
       res.json({ channel: ch, trends, top, special });
     } catch (e) {
       res.status(500).json({ error: e?.message || 'dashboard failed' });

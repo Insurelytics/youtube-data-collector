@@ -314,22 +314,49 @@ export function getTopVideos({ channelId, sinceIso, likeWeight = 150, commentWei
   return { views, likes, comments };
 }
 
-export function getSpecialVideos({ channelId, subscriberCount, sinceIso, viralMultiplier = 5 }) {
+export function getSpecialVideos({ channelId, avgViews, sinceIso, viralMultiplier = 5 }) {
   ensureDatabase();
+  
+  // Use time-filtered average views for consistency
+  const effectiveAvgViews = sinceIso ? getTimeFilteredAvgViews({ channelId, sinceIso }) : avgViews;
+  
   const rows = db.prepare(`
     SELECT id, title, viewCount, likeCount, commentCount, publishedAt, thumbnails,
            platform, shortCode, displayUrl, localImageUrl
     FROM videos
     WHERE channelId = :channelId AND publishedAt >= :sinceIso AND COALESCE(viewCount,0) >= :threshold
     ORDER BY COALESCE(viewCount,0) DESC
-  `).all({ channelId, sinceIso, threshold: viralMultiplier * (subscriberCount || 0) });
+  `).all({ channelId, sinceIso, threshold: viralMultiplier * (effectiveAvgViews || 0) });
   return rows;
 }
 
-export function getViralVideoCount({ channelId, subscriberCount, viralMultiplier = 5, sinceIso }) {
+export function getTimeFilteredAvgViews({ channelId, sinceIso }) {
   ensureDatabase();
+  const clauses = ['channelId = :channelId'];
+  const params = { channelId };
+  
+  if (sinceIso) {
+    clauses.push('publishedAt >= :sinceIso');
+    params.sinceIso = sinceIso;
+  }
+  
+  const whereSql = clauses.join(' AND ');
+  const result = db.prepare(`
+    SELECT AVG(COALESCE(viewCount,0)) as avgViews
+    FROM videos
+    WHERE ${whereSql}
+  `).get(params);
+  return result?.avgViews || 0;
+}
+
+export function getViralVideoCount({ channelId, avgViews, viralMultiplier = 5, sinceIso }) {
+  ensureDatabase();
+  
+  // If sinceIso is provided, use time-filtered average views
+  const effectiveAvgViews = sinceIso ? getTimeFilteredAvgViews({ channelId, sinceIso }) : avgViews;
+  
   const clauses = ['channelId = :channelId', 'COALESCE(viewCount,0) >= :threshold'];
-  const params = { channelId, threshold: viralMultiplier * (subscriberCount || 0) };
+  const params = { channelId, threshold: viralMultiplier * (effectiveAvgViews || 0) };
   
   if (sinceIso) {
     clauses.push('publishedAt >= :sinceIso');

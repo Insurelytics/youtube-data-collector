@@ -2,7 +2,8 @@
 // Follows the same pattern as the example project
 
 import cron from 'node-cron';
-import { listChannels, createSyncJob, getJobStatus, getSetting, setSetting } from './storage.js';
+import { listChannels, createSyncJob, getJobStatus, getSetting, setSetting, getNewVideosSince, identifyViralVideos } from './storage.js';
+import { sendViralVideosEmail } from './email.js';
 
 function getScheduledHour() {
     const scheduleSettingsStr = getSetting('scheduleSettings');
@@ -28,6 +29,7 @@ async function getCurrentDate() {
     }
     return new Date();
 }
+
 
 async function waitForJobsToComplete(jobIds, maxWaitHours = 1) {
     const checkInterval = 3000; // Check every 3 seconds
@@ -67,8 +69,11 @@ async function processAllJobs() {
     
     console.log(`Creating sync jobs for ${channels.length} active channels...`);
     
+    // Record the start time to identify new videos from this sync
+    const syncStartTime = new Date().toISOString();
+    
     // Update lastJobRun immediately to prevent duplicate job creation
-    setSetting('lastJobRun', new Date().toISOString());
+    setSetting('lastJobRun', syncStartTime);
     
     for (const channel of channels) {
         const jobId = createSyncJob({ 
@@ -83,16 +88,70 @@ async function processAllJobs() {
     console.log(`Created ${jobIds.length} jobs, waiting for completion...`);
     
     try {
-        await waitForJobsToComplete(jobIds, 4); // wait up to 4 hours for all sync jobs to complete
+        const jobResults = await waitForJobsToComplete(jobIds, 4); // wait up to 4 hours for all sync jobs to complete
         console.log("All scheduled sync jobs completed successfully");
         
-        // TODO: In the future, add email notifications with sync results
-        // TODO: Add analytics/reporting on sync performance
+        // Send email notifications with sync results
+        await sendSyncResultsEmail(syncStartTime, jobResults);
         
     } catch (error) {
         console.error('Error waiting for scheduled jobs to complete:', error);
         // TODO: In the future, send email to admin warning about sync issues
         throw error;
+    }
+}
+
+async function sendSyncResultsEmail(syncStartTime, jobResults) {
+    try {
+        // Check if email notifications are enabled
+        const scheduleSettingsStr = getSetting('scheduleSettings');
+        let emailNotificationsEnabled = false;
+        
+        if (scheduleSettingsStr) {
+            try {
+                const scheduleSettings = JSON.parse(scheduleSettingsStr);
+                emailNotificationsEnabled = scheduleSettings.emailNotifications || false;
+            } catch (e) {
+                console.warn('Failed to parse schedule settings for email notifications:', e);
+            }
+        }
+        
+        if (!emailNotificationsEnabled) {
+            console.log('Email notifications are disabled, skipping email...');
+            return;
+        }
+        
+        // Get all videos added since the sync started
+        const newVideos = getNewVideosSince(syncStartTime);
+        console.log(`Found ${newVideos.length} new videos from recent sync`);
+        
+        if (newVideos.length === 0) {
+            console.log('No new videos found, skipping email...');
+            return;
+        }
+        
+        // Get viral multiplier from settings or use default
+        let viralMultiplier = 5;
+        try {
+            const globalCriteria = getSetting('globalCriteria');
+            if (globalCriteria) {
+                const criteria = JSON.parse(globalCriteria);
+                viralMultiplier = criteria.viralMultiplier || 5;
+            }
+        } catch (e) {
+            console.warn('Failed to parse viral multiplier from settings, using default:', e);
+        }
+        
+        // Identify viral videos
+        const viralVideos = identifyViralVideos(newVideos, viralMultiplier);
+        console.log(`Identified ${viralVideos.length} viral videos`);
+        
+        // Send email notification
+        await sendViralVideosEmail(viralVideos, newVideos.length, jobResults);
+        
+    } catch (error) {
+        console.error('Error sending sync results email:', error);
+        // Don't throw here - we don't want email failures to break the sync process
     }
 }
 

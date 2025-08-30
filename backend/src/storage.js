@@ -547,3 +547,64 @@ export function getSettings() {
   return settings;
 }
 
+// Function to get videos added since a specific timestamp
+export function getNewVideosSince(sinceTimestamp) {
+  ensureDatabase();
+  return db.prepare(`
+    SELECT v.*, c.title as channelTitle, c.handle as channelHandle
+    FROM videos v
+    JOIN channels c ON v.channelId = c.id
+    WHERE v.lastSyncedAt >= ?
+    ORDER BY v.lastSyncedAt DESC, v.publishedAt DESC
+  `).all(sinceTimestamp);
+}
+
+// Function to identify viral videos from a set of videos
+export function identifyViralVideos(videos, viralMultiplier = 5) {
+  ensureDatabase();
+  
+  if (!videos || videos.length === 0) return [];
+  
+  // Group videos by channel to calculate viral threshold per channel
+  const channelGroups = {};
+  videos.forEach(video => {
+    if (!channelGroups[video.channelId]) {
+      channelGroups[video.channelId] = [];
+    }
+    channelGroups[video.channelId].push(video);
+  });
+  
+  const viralVideos = [];
+  
+  // Check each channel's videos for viral status
+  Object.keys(channelGroups).forEach(channelId => {
+    const channelVideos = channelGroups[channelId];
+    
+    // Get the channel's average views for viral calculation
+    const avgViewsResult = db.prepare(`
+      SELECT AVG(COALESCE(viewCount,0)) as avgViews
+      FROM videos
+      WHERE channelId = ? AND viewCount IS NOT NULL AND viewCount > 0
+    `).get(channelId);
+    
+    const avgViews = avgViewsResult?.avgViews || 0;
+    const viralThreshold = avgViews * viralMultiplier;
+    
+    // Find videos that exceed the viral threshold
+    channelVideos.forEach(video => {
+      const viewCount = video.viewCount || 0;
+      if (viewCount >= viralThreshold && avgViews > 0) {
+        viralVideos.push({
+          ...video,
+          viralThreshold,
+          avgViews,
+          viralMultiplier: (viewCount / avgViews).toFixed(1)
+        });
+      }
+    });
+  });
+  
+  // Sort by view count descending
+  return viralVideos.sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0));
+}
+

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Plus, Trash2, TrendingUp, Users, Eye, MessageCircle, Heart, ExternalLink, RefreshCcw, Settings, Flame, Clock, Loader2, Mail, Save, Zap, User } from 'lucide-react'
+import { Plus, Trash2, TrendingUp, Users, Eye, MessageCircle, Heart, ExternalLink, RefreshCcw, Settings, Flame, Clock, Loader2, Mail, Save, Zap, User, Play } from 'lucide-react'
 import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
@@ -17,6 +17,7 @@ import { Separator } from "@/components/ui/separator"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useToast } from "@/hooks/use-toast"
+import { JobsMonitor } from "@/components/jobs/JobsMonitor"
 
 type UiChannel = {
   id: string
@@ -30,6 +31,8 @@ type UiChannel = {
   viralVideos: number
   platform: string
 }
+
+
 
 function formatNumber(num: number) {
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
@@ -357,10 +360,14 @@ export default function HomePage() {
         </div>
 
         <Tabs defaultValue="channels" className="space-y-6">
-          <TabsList className="grid grid-cols-3 w-96">
+          <TabsList className="grid grid-cols-4 w-full max-w-2xl">
             <TabsTrigger value="channels">
               <User className="h-4 w-4 mr-2" />
               Channels
+            </TabsTrigger>
+            <TabsTrigger value="jobs">
+              <Play className="h-4 w-4 mr-2" />
+              Jobs
             </TabsTrigger>
             <TabsTrigger value="criteria">
               <Settings className="h-4 w-4 mr-2" />
@@ -545,6 +552,10 @@ export default function HomePage() {
                 </CardContent>
               </Card>
             )}
+          </TabsContent>
+
+          <TabsContent value="jobs" className="space-y-6">
+            <JobsMonitor />
           </TabsContent>
 
           <TabsContent value="criteria" className="space-y-6">

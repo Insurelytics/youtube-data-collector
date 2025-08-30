@@ -349,9 +349,22 @@ export default function HomePage() {
   const handleCriteriaChange = (field: string, value: number | string) => {
     const newCriteria = { ...criteria, [field]: value }
     setCriteria(newCriteria)
+    
+    // Store in both localStorage (for immediate frontend use) and database (for backend use)
     if (typeof window !== 'undefined') {
       localStorage.setItem('youtube-global-criteria', JSON.stringify(newCriteria))
     }
+    
+    // Save to database for backend access
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        settings: {
+          globalCriteria: newCriteria
+        }
+      })
+    }).catch(err => console.warn('Failed to save criteria to database:', err))
   }
 
   const handleScheduleChange = (field: string, value: string | boolean) => {
@@ -772,6 +785,16 @@ export default function HomePage() {
                       if (typeof window !== 'undefined') {
                         localStorage.setItem('youtube-global-criteria', JSON.stringify(defaultCriteria))
                       }
+                      // Save to database
+                      fetch('/api/settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          settings: {
+                            globalCriteria: defaultCriteria
+                          }
+                        })
+                      }).catch(err => console.warn('Failed to save default criteria to database:', err))
                     }}
                   >
                     Reset to Defaults

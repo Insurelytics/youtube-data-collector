@@ -365,10 +365,7 @@ export default function HomePage() {
               <User className="h-4 w-4 mr-2" />
               Channels
             </TabsTrigger>
-            <TabsTrigger value="jobs">
-              <Play className="h-4 w-4 mr-2" />
-              Jobs
-            </TabsTrigger>
+            
             <TabsTrigger value="criteria">
               <Settings className="h-4 w-4 mr-2" />
               Criteria
@@ -376,6 +373,10 @@ export default function HomePage() {
             <TabsTrigger value="schedule">
               <Clock className="h-4 w-4 mr-2" />
               Schedule
+            </TabsTrigger>
+            <TabsTrigger value="jobs">
+              <Play className="h-4 w-4 mr-2" />
+              Jobs
             </TabsTrigger>
           </TabsList>
 

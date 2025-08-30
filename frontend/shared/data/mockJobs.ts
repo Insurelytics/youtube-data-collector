@@ -1,0 +1,77 @@
+import { Job } from '../types/job'
+
+export const initialRunningJobs: Job[] = [
+  {
+    id: "job-1",
+    type: "Channel Scrape",
+    channelName: "TechReview Pro",
+    channelId: "1",
+    status: "running",
+    startTime: new Date(Date.now() - 45000), // Started 45 seconds ago
+    videosProcessed: 23,
+  },
+  {
+    id: "job-2",
+    type: "Channel Scrape",
+    channelName: "Gaming Central",
+    channelId: "2",
+    status: "queued",
+    startTime: new Date(Date.now() - 120000), // Started 2 minutes ago
+    videosProcessed: 0,
+  },
+]
+
+export const completedJobs: Job[] = [
+  {
+    id: "job-3",
+    type: "Channel Scrape",
+    channelName: "Cooking Masters",
+    channelId: "3",
+    status: "completed",
+    startTime: new Date(Date.now() - 600000),
+    endTime: new Date(Date.now() - 300000),
+    duration: 300000,
+    videosFound: 45,
+    videosProcessed: 45,
+    successCount: 43,
+    failureCount: 2,
+    viralVideosDetected: 1,
+    newVideos: 3,
+    updatedVideos: 42,
+  },
+  {
+    id: "job-4",
+    type: "Channel Scrape",
+    channelName: "TechReview Pro",
+    channelId: "1",
+    status: "completed",
+    startTime: new Date(Date.now() - 3600000),
+    endTime: new Date(Date.now() - 3300000),
+    duration: 300000,
+    videosFound: 89,
+    videosProcessed: 89,
+    successCount: 87,
+    failureCount: 2,
+    viralVideosDetected: 2,
+    newVideos: 5,
+    updatedVideos: 84,
+  },
+  {
+    id: "job-5",
+    type: "Channel Scrape",
+    channelName: "Gaming Central",
+    channelId: "2",
+    status: "failed",
+    startTime: new Date(Date.now() - 7200000),
+    endTime: new Date(Date.now() - 7080000),
+    duration: 120000,
+    videosFound: 0,
+    videosProcessed: 0,
+    successCount: 0,
+    failureCount: 1,
+    errorMessage: "API rate limit exceeded",
+    viralVideosDetected: 0,
+    newVideos: 0,
+    updatedVideos: 0,
+  },
+]

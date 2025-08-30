@@ -151,10 +151,10 @@ export default function ChannelDashboard() {
   }, [])
 
   const isViralVideo = (video: any) => {
-    if (!channel?.subscriberCount) return false
-    const subscriberCount = Number(channel.subscriberCount)
+    if (!channel?.avgViews) return false
+    const avgViews = Number(channel.avgViews)
     const viewCount = Number(video.viewCount || 0)
-    return viewCount >= subscriberCount * criteria.viralMultiplier
+    return viewCount >= avgViews * criteria.viralMultiplier
   }
 
   const calculateEngagementScore = (video: any) => {
@@ -283,7 +283,7 @@ export default function ChannelDashboard() {
             <TabsList className="grid grid-cols-3">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="viral">Viral Videos</TabsTrigger>
-              <TabsTrigger value="recent">Recent</TabsTrigger>
+              <TabsTrigger value="recent">All Videos</TabsTrigger>
             </TabsList>
             
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -349,7 +349,7 @@ export default function ChannelDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle>Viral Videos</CardTitle>
-                <CardDescription>Videos with {criteria.viralMultiplier}x+ more views than subscriber count from the selected time period</CardDescription>
+                <CardDescription>Videos with {criteria.viralMultiplier}x+ more views than average views from the selected time period</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -373,7 +373,7 @@ export default function ChannelDashboard() {
                         </h3>
                         <p className="text-sm text-muted-foreground">{formatDate(video.publishedAt)}</p>
                         <Badge variant="destructive" className="mt-1">
-                          {criteria.viralMultiplier}x+ viral multiplier
+                          {criteria.viralMultiplier}x+ average views multiplier
                         </Badge>
                       </div>
                       <div className="text-right space-y-1">
@@ -402,7 +402,7 @@ export default function ChannelDashboard() {
           <TabsContent value="recent" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Recent Videos ({TIME_RANGES.find(r => r.value === criteria.timeRange)?.label || 'All time'})</CardTitle>
+                <CardTitle>All Videos ({TIME_RANGES.find(r => r.value === criteria.timeRange)?.label || 'All time'})</CardTitle>
                 <CardDescription>All videos from the selected time period, ordered by engagement</CardDescription>
               </CardHeader>
               <CardContent>

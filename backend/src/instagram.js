@@ -30,8 +30,8 @@ export async function syncChannelReels({ handle, sinceDays }) {
     "isUserReelFeedURL": false,
     "isUserTaggedFeedURL": false,
     "onlyPostsNewerThan": sinceIsoDate,
-    "resultsLimit": 10,
-    "resultsType": "details",
+    "resultsLimit": 100,
+    "resultsType": "stories",
     "searchLimit": 100
   };
 
@@ -43,44 +43,50 @@ export async function syncChannelReels({ handle, sinceDays }) {
     console.log('Fetching results from dataset...');
     const { items } = await client.dataset(run.defaultDatasetId).listItems();
     
-    console.log(`Found ${items.length} Instagram profile data items for ${handle}`);
+    console.log(`Found ${items.length} Instagram posts for ${handle}`);
 
-    if (!items || items.length === 0) {
-      throw new Error('No Instagram profile data found');
-    }
-
-    const profile = items[0];
-    const posts = profile.latestPosts || [];
-
-    // Channel data from profile
+    // Channel data - will use basic info since items are posts, not profile data
     const channelId = `ig_${handle}`;
-    const channelTitle = profile.fullName || profile.username || handle;
-    const subscriberCount = profile.followersCount || null;
-    const thumbnailUrl = profile.profilePicUrlHD || profile.profilePicUrl || null;
+    const channelTitle = items.length > 0 ? (items[0].ownerFullName || items[0].ownerUsername || handle) : handle;
+    const subscriberCount = null; // Instagram doesn't expose follower counts publicly
+    const thumbnailUrl = null; // Would need separate API call to get profile picture
 
-    // Convert Instagram posts to our video format
-    const reels = posts.map(post => ({
-      id: `ig_${post.shortCode}`, // Prefix with 'ig_' to avoid conflicts with YouTube IDs
+    // Convert Instagram posts to our video format - items are already the posts
+    const reels = items.map(item => ({
+      id: `ig_${item.shortCode}`, // Prefix with 'ig_' to avoid conflicts with YouTube IDs
       channelId,
-      title: post.caption || `Instagram post ${post.shortCode}`, // Instagram posts don't have separate titles
-      description: post.caption || '',
-      publishedAt: post.timestamp || new Date().toISOString(),
-      durationSeconds: null, // Instagram doesn't provide video duration
-      viewCount: post.videoViewCount || null, // Use videoViewCount from Apify
-      likeCount: post.likesCount || null,
-      commentCount: post.commentsCount || null,
-      tags: post.hashtags || null,
-      thumbnails: post.displayUrl ? { default: { url: post.displayUrl } } : null,
-      raw: post,
+      title: item.caption || `Instagram post ${item.shortCode}`, // Instagram posts don't have separate titles
+      description: item.caption || '',
+      publishedAt: item.timestamp || new Date().toISOString(),
+      durationSeconds: item.videoDuration || null,
+      viewCount: item.videoViewCount || item.videoPlayCount || null,
+      likeCount: item.likesCount || null,
+      commentCount: item.commentsCount || null,
+      tags: item.hashtags || null,
+      thumbnails: item.displayUrl ? { default: { url: item.displayUrl } } : null,
+      raw: item,
       // Instagram-specific fields
       platform: 'instagram',
-      shortCode: post.shortCode,
-      displayUrl: post.displayUrl || null,
-      videoUrl: post.videoUrl || null,
-      dimensions: (post.dimensionsWidth && post.dimensionsHeight) ? { width: post.dimensionsWidth, height: post.dimensionsHeight } : null,
-      mentions: post.mentions || null,
-      images: post.images || null,
-      type: post.type || null,
+      shortCode: item.shortCode,
+      displayUrl: item.displayUrl || null,
+      videoUrl: item.videoUrl || null,
+      dimensions: (item.dimensionsHeight && item.dimensionsWidth) ? { width: item.dimensionsWidth, height: item.dimensionsHeight } : null,
+      mentions: item.mentions || null,
+      images: item.images || null,
+      type: item.type || null,
+      // Additional fields from the API response
+      url: item.url || null,
+      firstComment: item.firstComment || null,
+      latestComments: item.latestComments || null,
+      ownerId: item.ownerId || null,
+      ownerUsername: item.ownerUsername || null,
+      ownerFullName: item.ownerFullName || null,
+      productType: item.productType || null,
+      isSponsored: item.isSponsored || false,
+      musicInfo: item.musicInfo || null,
+      isCommentsDisabled: item.isCommentsDisabled || false,
+      childPosts: item.childPosts || null,
+      alt: item.alt || null
     }));
 
     console.log(`Converted ${reels.length} Instagram posts to reels format`);
@@ -90,15 +96,7 @@ export async function syncChannelReels({ handle, sinceDays }) {
       channelTitle,
       subscriberCount,
       thumbnailUrl,
-      reels,
-      profileData: {
-        biography: profile.biography,
-        postsCount: profile.postsCount,
-        followsCount: profile.followsCount,
-        verified: profile.verified,
-        businessCategoryName: profile.businessCategoryName,
-        externalUrls: profile.externalUrls
-      }
+      reels
     };
 
   } catch (error) {

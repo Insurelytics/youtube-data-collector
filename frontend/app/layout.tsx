@@ -6,8 +6,8 @@ import { Toaster } from "@/components/ui/toaster"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "YouTube Analytics Dashboard",
-  description: "Track and analyze YouTube channel performance",
+  title: "Social Media Analytics Dashboard",
+  description: "Track and analyze Instagram and YouTube channel performance",
     generator: 'v0.dev'
 }
 

@@ -1,5 +1,6 @@
 // Schedule management for YouTube Data Collector
 // Follows the same pattern as the example project
+// All scheduling operations use UTC time for consistency across timezones
 
 import cron from 'node-cron';
 import { listChannels, createSyncJob, getJobStatus, getSetting, setSetting, getNewVideosSince, identifyViralVideos } from './storage.js';
@@ -18,7 +19,7 @@ function getScheduledHour() {
             console.warn('Failed to parse schedule settings for sendTime:', e);
         }
     }
-    return process.env.SCHEDULED_HOUR ? parseInt(process.env.SCHEDULED_HOUR) : 4; // Default 4 AM
+    return process.env.SCHEDULED_HOUR ? parseInt(process.env.SCHEDULED_HOUR) : 4; // Default 4 AM UTC
 }
 
 let isJobRunning = false; // Lock to prevent concurrent job execution
@@ -187,11 +188,11 @@ async function shouldRunJob() {
     const now = await getCurrentDate();
     
     if (frequency === 'daily') {
-        // Check if it's the following day and after scheduled hour
-        const isNextDay = now.getDate() !== lastJobRunDate.getDate() || 
-                         now.getMonth() !== lastJobRunDate.getMonth() || 
-                         now.getFullYear() !== lastJobRunDate.getFullYear();
-        const isAfterScheduledHour = now.getHours() >= getScheduledHour();
+        // Check if it's the following day and after scheduled hour (using UTC for consistency)
+        const isNextDay = now.getUTCDate() !== lastJobRunDate.getUTCDate() || 
+                         now.getUTCMonth() !== lastJobRunDate.getUTCMonth() || 
+                         now.getUTCFullYear() !== lastJobRunDate.getUTCFullYear();
+        const isAfterScheduledHour = now.getUTCHours() >= getScheduledHour();
         
         if (isNextDay && isAfterScheduledHour) {
             return true;
@@ -205,7 +206,7 @@ async function shouldRunJob() {
         const twoDaysInMs = 2 * 24 * 60 * 60 * 1000;
         const timeSinceLastRun = now.getTime() - lastJobRunDate.getTime();
         const hasBeenTwoDays = timeSinceLastRun >= twoDaysInMs;
-        const isAfterScheduledHour = now.getHours() >= getScheduledHour();
+        const isAfterScheduledHour = now.getUTCHours() >= getScheduledHour();
         
         if (hasBeenTwoDays && isAfterScheduledHour) {
             return true;
@@ -217,10 +218,10 @@ async function shouldRunJob() {
     if (frequency === 'weekly') {
         const weeklyDay = parseInt(process.env.SCHEDULE_WEEKLY_DAY || '0'); // 0 = Sunday
         
-        // Check if it's the correct day of week and after scheduled hour
-        const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        // Check if it's the correct day of week and after scheduled hour (using UTC)
+        const currentDay = now.getUTCDay(); // 0 = Sunday, 1 = Monday, etc.
         const isCorrectDay = currentDay === weeklyDay;
-        const isAfterScheduledHour = now.getHours() >= getScheduledHour();
+        const isAfterScheduledHour = now.getUTCHours() >= getScheduledHour();
         
         // Check if at least a week has passed since last run
         const weekInMs = 7 * 24 * 60 * 60 * 1000;
@@ -237,16 +238,16 @@ async function shouldRunJob() {
     if (frequency === 'monthly') {
         const monthlyDay = parseInt(process.env.SCHEDULE_MONTHLY_DAY || '1'); // 1st of month
         
-        // Check if it's the correct day of month and after scheduled hour
-        const currentDate = now.getDate();
+        // Check if it's the correct day of month and after scheduled hour (using UTC)
+        const currentDate = now.getUTCDate();
         const isCorrectDate = currentDate === monthlyDay;
-        const isAfterScheduledHour = now.getHours() >= getScheduledHour();
+        const isAfterScheduledHour = now.getUTCHours() >= getScheduledHour();
         
         // Check if at least a month has passed since last run
-        const lastRunMonth = lastJobRunDate.getMonth();
-        const lastRunYear = lastJobRunDate.getFullYear();
-        const currentMonth = now.getMonth();
-        const currentYear = now.getFullYear();
+        const lastRunMonth = lastJobRunDate.getUTCMonth();
+        const lastRunYear = lastJobRunDate.getUTCFullYear();
+        const currentMonth = now.getUTCMonth();
+        const currentYear = now.getUTCFullYear();
         
         const hasBeenAMonth = (currentYear > lastRunYear) || 
                              (currentYear === lastRunYear && currentMonth > lastRunMonth);

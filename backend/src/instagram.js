@@ -1,5 +1,6 @@
 import { ApifyClient } from 'apify-client';
 import dotenv from 'dotenv';
+import { getLastPublishedDate } from './storage.js';
 
 dotenv.config();
 
@@ -16,9 +17,24 @@ export async function syncChannelReels({ handle, sinceDays }) {
     throw new Error('APIFY_API_KEY environment variable is required for Instagram functionality');
   }
 
-  // Calculate since date
-  const sinceDate = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
-  const sinceIsoDate = sinceDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+  // Get the last published date for this channel, or use sinceDays as fallback
+  const channelId = `ig_${handle}`;
+  const lastPublishedDate = getLastPublishedDate(channelId);
+  
+  let sinceIsoDate;
+  if (lastPublishedDate) {
+    // Use the last published date as starting point with a small buffer to avoid missing same-day posts
+    const lastDate = new Date(lastPublishedDate);
+    // Subtract 1 second to ensure we don't miss posts published at the exact same time
+    const bufferedDate = new Date(lastDate.getTime() - 1000);
+    sinceIsoDate = bufferedDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+    console.log(`Using last published date ${sinceIsoDate} (with buffer) for Instagram channel ${handle}`);
+  } else {
+    // Fallback to sinceDays if no previous posts exist
+    const sinceDate = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+    sinceIsoDate = sinceDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+    console.log(`No previous posts found, using ${sinceDays} days ago (${sinceIsoDate}) for Instagram channel ${handle}`);
+  }
 
   // Prepare Actor input to get profile details and posts
   const input = {
@@ -57,7 +73,7 @@ export async function syncChannelReels({ handle, sinceDays }) {
       channelId,
       title: item.caption || `Instagram post ${item.shortCode}`, // Instagram posts don't have separate titles
       description: item.caption || '',
-      publishedAt: item.timestamp || new Date().toISOString(),
+      publishedAt: item.timestamp ? new Date(item.timestamp).toISOString() : new Date().toISOString(),
       durationSeconds: item.videoDuration || null,
       viewCount: item.videoViewCount || item.videoPlayCount || null,
       likeCount: item.likesCount || null,

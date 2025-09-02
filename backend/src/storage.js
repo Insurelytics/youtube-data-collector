@@ -175,7 +175,7 @@ export function upsertVideos(videos) {
     channelId: v.channelId,
     title: v.title,
     description: v.description || '',
-    publishedAt: v.publishedAt,
+    publishedAt: v.publishedAt ? new Date(v.publishedAt).toISOString() : new Date().toISOString(),
     durationSeconds: v.durationSeconds || null,
     viewCount: v.viewCount ?? null,
     likeCount: v.likeCount ?? null,
@@ -557,6 +557,17 @@ export function getNewVideosSince(sinceTimestamp) {
     WHERE v.lastSyncedAt >= ?
     ORDER BY v.lastSyncedAt DESC, v.publishedAt DESC
   `).all(sinceTimestamp);
+}
+
+// Function to get the last published date for a channel
+export function getLastPublishedDate(channelId) {
+  ensureDatabase();
+  const result = db.prepare(`
+    SELECT MAX(publishedAt) as lastPublishedAt
+    FROM videos
+    WHERE channelId = ?
+  `).get(channelId);
+  return result?.lastPublishedAt || null;
 }
 
 // Function to identify viral videos from a set of videos

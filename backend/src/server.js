@@ -29,7 +29,7 @@ import {
   getVideosByTopic, 
   extractAndAssociateHashtags 
 } from './storage.js';
-import { getTopicRanking } from './topic-math.js';
+import { getTopicRanking, getTopicGraph } from './topic-math.js';
 
 import { syncChannelVideos as syncYouTubeVideos, getChannelByHandle as getYouTubeChannelByHandle } from './youtube.js';
 import { syncChannelReels as syncInstagramReels, getChannelByHandle as getInstagramChannelByHandle } from './instagram.js';
@@ -39,6 +39,7 @@ import { downloadImage } from './image-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
 
 const PORT = process.env.PORT || 3000;
 const IMAGES_DIR = path.join(__dirname, '../images');
@@ -316,6 +317,72 @@ function createServer() {
       });
     } catch (error) {
       res.status(500).json({ error: error.message || 'Failed to fetch topic rankings' });
+    }
+  });
+
+  app.get('/api/topics/graph', (req, res) => {
+    try {
+      // Get the topic graph data
+      const topicGraph = getTopicGraph();
+      
+      // Function to categorize topics based on name
+      const categorizeTopicByName = (name) => {
+        const lowerName = name.toLowerCase();
+        if (lowerName.includes('ai') || lowerName.includes('machine learning') || lowerName.includes('ml')) {
+          return { category: "Technology", group: "emerging-tech" };
+        }
+        if (lowerName.includes('gaming') || lowerName.includes('game') || lowerName.includes('stream')) {
+          return { category: "Gaming", group: "gaming-content" };
+        }
+        if (lowerName.includes('food') || lowerName.includes('recipe') || lowerName.includes('cooking')) {
+          return { category: "Cooking", group: "cooking-basics" };
+        }
+        if (lowerName.includes('tech') || lowerName.includes('iphone') || lowerName.includes('android') || lowerName.includes('programming') || lowerName.includes('coding')) {
+          return { category: "Technology", group: "consumer-tech" };
+        }
+        return { category: "General", group: "general" };
+      };
+
+      // Transform data to match frontend expectations
+      const topics = topicGraph.map((topic, index) => {
+        const categoryInfo = categorizeTopicByName(topic.name);
+        return {
+          id: index + 1,
+          topic: topic.name, // Frontend expects 'topic' instead of 'name'
+          engagementMultiplier: topic.engagementMultiplier || 1,
+          videoCount: topic.videos.length,
+          category: categoryInfo.category,
+          group: categoryInfo.group,
+          x: Math.random() * 600 + 100, // Random positions, physics will handle layout
+          y: Math.random() * 400 + 100,
+          description: `${topic.name} content with ${topic.videos.length} videos`,
+          topVideos: topic.topVideos
+        };
+      });
+      
+      // Transform connections to relationships
+      const relationships = [];
+      topicGraph.forEach((topic, sourceIndex) => {
+        topic.connections.forEach(connection => {
+          const targetIndex = topicGraph.findIndex(t => t.name === connection.topic.name);
+          if (targetIndex !== -1 && sourceIndex < targetIndex) { // Avoid duplicates
+            relationships.push({
+              source: sourceIndex + 1,
+              target: targetIndex + 1,
+              strength: connection.weight, // Frontend expects 'strength' instead of 'weight'
+              label: `${topic.name} - ${connection.topic.name}`
+            });
+          }
+        });
+      });
+      
+      res.json({
+        topics,
+        relationships
+      });
+    } catch (error) {
+      console.error('Error in /api/topics/graph:', error);
+      res.status(500).json({ error: error.message || 'Failed to fetch topic graph' });
     }
   });
 

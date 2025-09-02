@@ -22,6 +22,7 @@ class Topic {
         this.closenessScore = closenessScore;
         this.videos = videos;
         this.connections = connections;
+        this.topVideos = []; // Will be populated with top 3 videos by raw engagement
     }
 }
 
@@ -55,10 +56,28 @@ export function getTopicGraph() {
         const nonNullVideos = topicVideos.filter(v => v !== undefined);
         return new Topic(topic.name, 0, 0, nonNullVideos);
     });
-    // 5: Compute topic engagement score by suing the scores of the videos that are associated with the topic
+    // 5: Compute topic engagement score by using the scores of the videos that are associated with the topic
     topicObjects.forEach(topic => {
-        // how much does this topic affect engagement score? What't the average engagement score for the videos associated with this topic?
+        // how much does this topic affect engagement score? What's the average engagement score for the videos associated with this topic?
         topic.engagementMultiplier = topic.videos.reduce((sum, video)=> sum + video.normalizedEngagementScore, 0) / topic.videos.length;
+        
+        // 5.1: Get top 3 videos by raw engagement score for this topic
+        const sortedVideos = topic.videos
+            .map(video => ({
+                ...video,
+                rawEngagement: video.engagementScore // Use raw engagement, not normalized
+            }))
+            .sort((a, b) => b.rawEngagement - a.rawEngagement)
+            .slice(0, 3);
+        
+        topic.topVideos = sortedVideos.map(video => ({
+            title: video.title,
+            views: video.viewCount || 0,
+            comments: video.commentCount || 0,
+            likes: video.likeCount || 0,
+            id: video.id,
+            publishedAt: video.publishedAt
+        }));
     });
     // 6: Compute topic closeness score by seeing what percentage of videos with one topic also have the other topic
     topicObjects.forEach(topic => {

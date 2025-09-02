@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
-// Enhanced mock data with cross-category connections and video details
+// Enhanced mock data with topic connections and video details
 const initialTopicsData = [
   {
     id: 1,
@@ -147,18 +147,18 @@ const initialTopicsData = [
   },
 ]
 
-// Enhanced relationships with cross-category connections
-const relationships = [
+// Enhanced relationships with topic connections (fallback data)
+const initialRelationships = [
   // Within Technology
   { source: 1, target: 2, strength: 0.9, label: "AI/ML overlap" },
   { source: 3, target: 7, strength: 0.6, label: "Apple ecosystem" },
 
-  // Cross-category: Tech + Gaming
+  // Tech + Gaming connections
   { source: 1, target: 4, strength: 0.4, label: "AI in gaming" },
   { source: 7, target: 4, strength: 0.5, label: "Budget gaming tech" },
   { source: 3, target: 5, strength: 0.3, label: "iPhone streaming" },
 
-  // Cross-category: Tech + Cooking
+  // Tech + Cooking connections
   { source: 3, target: 8, strength: 0.7, label: "iPhone food photography" },
   { source: 1, target: 6, strength: 0.2, label: "AI recipe generation" },
 
@@ -168,7 +168,7 @@ const relationships = [
   // Within Cooking
   { source: 6, target: 8, strength: 0.6, label: "Recipe presentation" },
 
-  // Cross-category: Gaming + Cooking
+  // Gaming + Cooking connections
   { source: 5, target: 6, strength: 0.3, label: "Cooking streams" },
 ]
 
@@ -180,13 +180,21 @@ const groups = {
   "gaming-content": { color: "bg-orange-500", label: "Gaming Content", centerX: 150, centerY: 380 },
   "cooking-basics": { color: "bg-red-500", label: "Cooking Basics", centerX: 600, centerY: 300 },
   "cooking-content": { color: "bg-pink-500", label: "Cooking Content", centerX: 580, centerY: 320 },
+  "general": { color: "bg-gray-500", label: "General", centerX: 400, centerY: 250 },
 }
 
 // Precompute final positions using physics simulation
-function precomputePositions() {
-  let topics = [...initialTopicsData]
+function precomputePositions(inputTopics = initialTopicsData, inputRelationships = initialRelationships) {
+  let topics = [...inputTopics]
   const maxSteps = 100
   const timeStep = 0.1
+
+  // Ensure topics have initial positions
+  topics = topics.map(topic => ({
+    ...topic,
+    x: topic.x || Math.random() * 600 + 100,
+    y: topic.y || Math.random() * 400 + 100
+  }))
 
   for (let step = 0; step < maxSteps; step++) {
     topics = topics.map((topic) => {
@@ -215,7 +223,7 @@ function precomputePositions() {
       })
 
       // PID Spring forces for connected nodes
-      relationships.forEach((rel) => {
+      inputRelationships.forEach((rel) => {
         if (rel.source === topic.id || rel.target === topic.id) {
           const otherId = rel.source === topic.id ? rel.target : rel.source
           const other = topics.find((t) => t.id === otherId)
@@ -262,13 +270,45 @@ function precomputePositions() {
   return topics
 }
 
-// Precompute the final positions
+// Precompute the final positions for fallback data
 const precomputedTopics = precomputePositions()
 
 export default function HotTopics() {
-  const [topics] = useState(precomputedTopics)
+  const [topics, setTopics] = useState(precomputedTopics) // Start with mock data, replace with API data
+  const [relationships, setRelationships] = useState(initialRelationships)
   const [selectedTopic, setSelectedTopic] = useState<number | null>(null)
   const [viewBox, setViewBox] = useState("0 0 800 500")
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Fetch data from API
+  useEffect(() => {
+    const fetchTopicGraph = async () => {
+      try {
+        setLoading(true)
+        const response = await fetch('/api/topics/graph')
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+        const data = await response.json()
+        
+        if (data.topics && data.relationships) {
+          // Apply physics simulation to the API data
+          const topicsWithPhysics = precomputePositions(data.topics, data.relationships)
+          setTopics(topicsWithPhysics)
+          setRelationships(data.relationships)
+        }
+      } catch (err) {
+        console.error('Failed to fetch topic graph:', err)
+        setError(err instanceof Error ? err.message : 'Failed to load topic data')
+        // Keep using mock data on error
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchTopicGraph()
+  }, [])
 
   // Calculate zoom and pan to fit all nodes with 5% margin
   useEffect(() => {
@@ -359,6 +399,37 @@ export default function HotTopics() {
     return colorMap[bgClass] || "fill-gray-500"
   }
 
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold mb-2">Topic Analysis Dashboard</h2>
+          <p className="text-muted-foreground">Loading topic data...</p>
+        </div>
+        <Card>
+          <CardContent className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+              <p>Loading topic graph...</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold mb-2">Topic Analysis Dashboard</h2>
+          <p className="text-red-600">Error: {error}</p>
+          <p className="text-sm text-muted-foreground">Showing fallback data</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -404,17 +475,16 @@ export default function HotTopics() {
                         if (!source || !target) return null
 
                         // Color and style based on similarity strength
-                        const isCrossCategory = source.category !== target.category
                         const isHighSimilarity = rel.strength > 0.5
 
                         let strokeColor = "#94a3b8" // Default gray
                         let strokeOpacity = 0.4
 
                         if (isHighSimilarity) {
-                          strokeColor = isCrossCategory ? "#f59e0b" : "#10b981" // Amber for cross-category, green for same
+                          strokeColor = "#10b981" // Green for strong connections
                           strokeOpacity = 0.8
                         } else {
-                          strokeColor = "#ef4444" // Red for low similarity
+                          strokeColor = "#ef4444" // Red for weak connections
                           strokeOpacity = 0.3
                         }
 
@@ -446,7 +516,7 @@ export default function HotTopics() {
                               cx={topic.x}
                               cy={topic.y}
                               r={radius}
-                              className={`cursor-pointer ${getSVGFillClass(groups[topic.group as keyof typeof groups].color)}`}
+                              className={`cursor-pointer ${getSVGFillClass(groups[topic.group as keyof typeof groups]?.color || "bg-gray-500")}`}
                               style={{
                                 filter:
                                   selectedTopic === topic.id
@@ -481,10 +551,6 @@ export default function HotTopics() {
                           <span>High Similarity</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <div className="w-4 h-0.5 bg-amber-500"></div>
-                          <span>Cross-Category</span>
-                        </div>
-                        <div className="flex items-center gap-2">
                           <div className="w-4 h-0.5 bg-red-400 opacity-60" style={{ borderTop: "2px dashed" }}></div>
                           <span>Low Similarity</span>
                         </div>
@@ -510,7 +576,7 @@ export default function HotTopics() {
                       const topic = topics.find((t) => t.id === selectedTopic)
                       if (!topic) return null
 
-                      const group = groups[topic.group as keyof typeof groups]
+                                              const group = groups[topic.group as keyof typeof groups] || { color: "bg-gray-500", label: "General" }
                       const connections = relationships.filter(
                         (rel) => rel.source === topic.id || rel.target === topic.id,
                       )
@@ -541,17 +607,10 @@ export default function HotTopics() {
                                 const connectedTopic = topics.find((t) => t.id === connectedId)
                                 if (!connectedTopic) return null
 
-                                const isCrossCategory = topic.category !== connectedTopic.category
-
                                 return (
                                   <div key={index} className="flex items-center justify-between text-xs">
                                     <div className="flex items-center gap-1">
                                       <span>{connectedTopic.topic}</span>
-                                      {isCrossCategory && (
-                                        <Badge variant="outline" className="text-xs">
-                                          Cross
-                                        </Badge>
-                                      )}
                                     </div>
                                     <Badge variant="outline">{(conn.strength * 100).toFixed(0)}%</Badge>
                                   </div>
@@ -576,32 +635,27 @@ export default function HotTopics() {
                 </Card>
               )}
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Cross-Category Connections</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {relationships
-                    .filter((rel) => {
-                      const source = topics.find((t) => t.id === rel.source)
-                      const target = topics.find((t) => t.id === rel.target)
-                      return source && target && source.category !== target.category
-                    })
-                    .slice(0, 5)
-                    .map((rel, index) => {
-                      const source = topics.find((t) => t.id === rel.source)
-                      const target = topics.find((t) => t.id === rel.target)
-                      return (
-                        <div key={index} className="text-xs p-2 bg-amber-50 rounded border border-amber-200">
-                          <div className="font-medium">
-                            {source?.topic} ↔ {target?.topic}
+                              <Card>
+                  <CardHeader>
+                    <CardTitle>Top Trending Topics</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {topics
+                      .sort((a, b) => b.engagementMultiplier - a.engagementMultiplier)
+                      .slice(0, 5)
+                      .map((topic, index) => (
+                        <div key={index} className="text-xs p-2 bg-green-50 rounded border border-green-200">
+                          <div className="flex items-center justify-between">
+                            <div className="font-medium">{topic.topic}</div>
+                            <Badge variant="outline" className="text-green-700">
+                              {formatMultiplier(topic.engagementMultiplier)}
+                            </Badge>
                           </div>
-                          <div className="text-muted-foreground">{rel.label}</div>
+                          <div className="text-muted-foreground">{topic.description}</div>
                         </div>
-                      )
-                    })}
-                </CardContent>
-              </Card>
+                      ))}
+                  </CardContent>
+                </Card>
             </div>
           </div>
         </TabsContent>
@@ -704,12 +758,7 @@ export default function HotTopics() {
                                     {((connection?.strength || 0) * 100).toFixed(0)}%
                                   </Badge>
                                 </div>
-                                <div className="text-muted-foreground">{connection?.label}</div>
-                                {topic.category !== connection?.category && (
-                                  <Badge variant="outline" className="text-xs mt-1">
-                                    Cross-category
-                                  </Badge>
-                                )}
+                                                                  <div className="text-muted-foreground">{connection?.label}</div>
                               </div>
                             ))}
                           </CollapsibleContent>

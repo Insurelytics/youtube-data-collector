@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { getEngagementSqlExpression } from './engagement-utils.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -347,7 +348,7 @@ export function getChannelTrends({ channelId, sinceIso }) {
 export function getTopVideos({ channelId, sinceIso, likeWeight = 150, commentWeight = 500 }) {
   ensureDatabase();
   const where = `WHERE channelId = :channelId AND publishedAt >= :sinceIso`;
-  const engagement = `COALESCE(viewCount,0) * (COALESCE(durationSeconds,0) / 60.0) + ${likeWeight}*COALESCE(likeCount,0) + ${commentWeight}*COALESCE(commentCount,0)`;
+  const engagement = getEngagementSqlExpression(likeWeight, commentWeight);
   const views = db.prepare(`
     SELECT id, title, viewCount, likeCount, commentCount, publishedAt, thumbnails, 
            platform, shortCode, displayUrl, localImageUrl, ${engagement} AS engagement
@@ -427,7 +428,7 @@ export function queryVideosAdvanced({ sinceIso, channelId, sort, order, page, pa
   if (channelId) { clauses.push('channelId = :channelId'); params.channelId = channelId; }
   const whereSql = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   const orderSql = order?.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
-  const engagement = `COALESCE(viewCount,0) * (COALESCE(durationSeconds,0) / 60.0) + ${likeWeight}*COALESCE(likeCount,0) + ${commentWeight}*COALESCE(commentCount,0)`;
+  const engagement = getEngagementSqlExpression(likeWeight, commentWeight);
   let sortExpr = 'publishedAt';
   if (sort === 'engagement') sortExpr = engagement;
   if (sort === 'views') sortExpr = 'viewCount';
@@ -497,6 +498,22 @@ export function getNextPendingJob() {
     ORDER BY created_at ASC
     LIMIT 1
   `).get();
+}
+
+// For later: this is a heavy operation, I should migrate all code using it to a more efficient function
+export function getAllVideos() {
+  ensureDatabase();
+  return db.prepare('SELECT * FROM videos').all();
+}
+
+export function getAllTopics() {
+  ensureDatabase();
+  return db.prepare('SELECT * FROM topics').all();
+}
+
+export function getAllVideoTopics() {
+  ensureDatabase();
+  return db.prepare('SELECT * FROM video_topics').all();
 }
 
 export function getJobStatus(jobId) {

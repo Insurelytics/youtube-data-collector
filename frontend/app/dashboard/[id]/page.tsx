@@ -5,6 +5,7 @@ import { ArrowLeft, Users, Eye, MessageCircle, Heart, TrendingUp, Calendar, Play
 import Link from "next/link"
 import { useParams } from "next/navigation"
 
+
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -155,13 +156,6 @@ export default function ChannelDashboard() {
     const avgViews = Number(channel.avgViews)
     const viewCount = Number(video.viewCount || 0)
     return viewCount >= avgViews * criteria.viralMultiplier
-  }
-
-  const calculateEngagementScore = (video: any) => {
-    const views = Number(video.viewCount || 0)
-    const comments = Number(video.commentCount || 0) * criteria.commentWeight
-    const likes = Number(video.likeCount || 0) * criteria.likeWeight
-    return views + comments + likes
   }
 
   useEffect(() => {

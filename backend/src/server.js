@@ -29,6 +29,7 @@ import {
   getVideosByTopic, 
   extractAndAssociateHashtags 
 } from './storage.js';
+import { getTopicRanking } from './topic-math.js';
 
 import { syncChannelVideos as syncYouTubeVideos, getChannelByHandle as getYouTubeChannelByHandle } from './youtube.js';
 import { syncChannelReels as syncInstagramReels, getChannelByHandle as getInstagramChannelByHandle } from './instagram.js';
@@ -297,6 +298,24 @@ function createServer() {
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: error.message || 'Failed to fetch videos for topic' });
+    }
+  });
+
+  app.get('/api/topics/ranking', (req, res) => {
+    try {
+      // Get all topics with their stats
+      const topicStats = getTopicStats();
+      
+      // Use the topic ranking algorithm to sort by engagement impact
+      const rankedTopics = getTopicRanking(topicStats.topics);
+      
+      res.json({
+        totalTopics: topicStats.totalTopics,
+        totalAssociations: topicStats.totalAssociations,
+        rankedTopics
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message || 'Failed to fetch topic rankings' });
     }
   });
 

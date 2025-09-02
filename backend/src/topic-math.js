@@ -68,7 +68,12 @@ export function getTopicGraph() {
             const sharedVideos = topic.videos.filter(video => otherTopic.videos.some(v => v.id === video.id));
             topic.connections.push(new Connection(otherTopic, sharedVideos.length / topic.videos.length));
         });
-    });    
-    // 7: return the topic objects
+    }); 
+    // 7: Limit to the top 5 connections for each topic
+    topicObjects.forEach(topic => {
+        topic.connections.sort((a, b) => b.weight - a.weight);
+        topic.connections = topic.connections.slice(0, 5);
+    });   
+    // 8: return the topic objects
     return topicObjects;
 }

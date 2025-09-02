@@ -18,6 +18,7 @@ import { Separator } from "@/components/ui/separator"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useToast } from "@/hooks/use-toast"
 import { JobsMonitor } from "@/components/jobs/JobsMonitor"
+import HotTopics from "@/components/HotTopics"
 
 type UiChannel = {
   id: string
@@ -412,12 +413,15 @@ export default function HomePage() {
         </div>
 
         <Tabs defaultValue="channels" className="space-y-6">
-          <TabsList className="grid grid-cols-4 w-full max-w-2xl">
+          <TabsList className="grid grid-cols-5 w-full max-w-3xl">
             <TabsTrigger value="channels">
               <User className="h-4 w-4 mr-2" />
               Channels
             </TabsTrigger>
-            
+            <TabsTrigger value="hot-topics">
+              <Flame className="h-4 w-4 mr-2" />
+              Hot Topics
+            </TabsTrigger>
             <TabsTrigger value="criteria">
               <Settings className="h-4 w-4 mr-2" />
               Criteria
@@ -605,6 +609,10 @@ export default function HomePage() {
                 </CardContent>
               </Card>
             )}
+          </TabsContent>
+
+          <TabsContent value="hot-topics" className="space-y-6">
+            <HotTopics />
           </TabsContent>
 
           <TabsContent value="jobs" className="space-y-6">

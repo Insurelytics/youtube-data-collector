@@ -69,10 +69,27 @@ export function ensureDatabase() {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS topics (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS video_topics (
+      video_id TEXT NOT NULL,
+      topic_id INTEGER NOT NULL,
+      PRIMARY KEY (video_id, topic_id),
+      FOREIGN KEY (video_id) REFERENCES videos(id),
+      FOREIGN KEY (topic_id) REFERENCES topics(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_videos_channel_date ON videos(channelId, publishedAt DESC);
     CREATE INDEX IF NOT EXISTS idx_videos_views ON videos(viewCount DESC);
     CREATE INDEX IF NOT EXISTS idx_sync_jobs_status ON sync_jobs(status);
     CREATE INDEX IF NOT EXISTS idx_sync_jobs_created ON sync_jobs(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_topics_name ON topics(name);
+    CREATE INDEX IF NOT EXISTS idx_video_topics_video ON video_topics(video_id);
+    CREATE INDEX IF NOT EXISTS idx_video_topics_topic ON video_topics(topic_id);
   `);
   return db;
 }
@@ -195,7 +212,11 @@ export function upsertVideos(videos) {
   });
 
   const tx = db.transaction((all) => {
-    for (const item of all) stmt.run(toRow(item));
+    for (const item of all) {
+      stmt.run(toRow(item));
+      // Extract and associate hashtags after inserting/updating the video
+      extractAndAssociateHashtags(item.id, item.description);
+    }
   });
   tx(videos);
 }
@@ -617,5 +638,121 @@ export function identifyViralVideos(videos, viralMultiplier = 5) {
   
   // Sort by view count descending
   return viralVideos.sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0));
+}
+
+// Helper function to extract hashtags from text
+function extractHashtags(text) {
+  if (!text) return [];
+  const hashtags = text.match(/#[a-zA-Z0-9_]+/g) || [];
+  return hashtags.map(tag => tag.toLowerCase().slice(1)); // Remove # and lowercase
+}
+
+// Function to upsert topic and return topic ID
+export function upsertTopic(topicName) {
+  ensureDatabase();
+  const normalizedName = topicName.toLowerCase().trim();
+  if (!normalizedName) return null;
+  
+  // Try to find existing topic
+  let topic = db.prepare('SELECT id FROM topics WHERE name = ?').get(normalizedName);
+  
+  if (!topic) {
+    // Create new topic
+    const stmt = db.prepare('INSERT INTO topics (name, created_at) VALUES (?, ?)');
+    const result = stmt.run(normalizedName, new Date().toISOString());
+    return result.lastInsertRowid;
+  }
+  
+  return topic.id;
+}
+
+// Function to associate video with topics
+export function associateVideoWithTopics(videoId, topicNames) {
+  ensureDatabase();
+  if (!topicNames || topicNames.length === 0) return;
+  
+  // Clear existing associations
+  db.prepare('DELETE FROM video_topics WHERE video_id = ?').run(videoId);
+  
+  // Add new associations
+  const insertStmt = db.prepare('INSERT OR IGNORE INTO video_topics (video_id, topic_id) VALUES (?, ?)');
+  const tx = db.transaction(() => {
+    for (const topicName of topicNames) {
+      const topicId = upsertTopic(topicName);
+      if (topicId) {
+        insertStmt.run(videoId, topicId);
+      }
+    }
+  });
+  tx();
+}
+
+// Function to extract and associate hashtags from video description
+export function extractAndAssociateHashtags(videoId, description) {
+  const hashtags = extractHashtags(description);
+  if (hashtags.length > 0) {
+    associateVideoWithTopics(videoId, hashtags);
+  }
+}
+
+// Function to get topic statistics
+export function getTopicStats() {
+  ensureDatabase();
+  const stats = db.prepare(`
+    SELECT 
+      t.id,
+      t.name,
+      t.created_at,
+      COUNT(vt.video_id) as video_count
+    FROM topics t
+    LEFT JOIN video_topics vt ON t.id = vt.topic_id
+    GROUP BY t.id, t.name, t.created_at
+    ORDER BY video_count DESC, t.name ASC
+  `).all();
+  
+  const totalTopics = stats.length;
+  const totalAssociations = stats.reduce((sum, topic) => sum + topic.video_count, 0);
+  
+  return {
+    totalTopics,
+    totalAssociations,
+    topics: stats
+  };
+}
+
+// Function to get videos associated with a specific topic
+export function getVideosByTopic(topicName, { page = 1, pageSize = 50 } = {}) {
+  ensureDatabase();
+  const normalizedName = topicName.toLowerCase().trim();
+  
+  const totalQuery = db.prepare(`
+    SELECT COUNT(*) as count
+    FROM videos v
+    INNER JOIN video_topics vt ON v.id = vt.video_id
+    INNER JOIN topics t ON vt.topic_id = t.id
+    WHERE t.name = ?
+  `);
+  
+  const total = totalQuery.get(normalizedName)?.count || 0;
+  
+  const offset = (page - 1) * pageSize;
+  const videosQuery = db.prepare(`
+    SELECT v.*, t.name as topic_name
+    FROM videos v
+    INNER JOIN video_topics vt ON v.id = vt.video_id
+    INNER JOIN topics t ON vt.topic_id = t.id
+    WHERE t.name = ?
+    ORDER BY v.publishedAt DESC
+    LIMIT ? OFFSET ?
+  `);
+  
+  const videos = videosQuery.all(normalizedName, pageSize, offset);
+  
+  return {
+    total,
+    page,
+    pageSize,
+    videos
+  };
 }
 

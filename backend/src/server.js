@@ -6,7 +6,30 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { ensureDatabase, upsertVideos, queryVideos, upsertChannel, listChannels, removeChannel, getChannel, getChannelTrends, getTopVideos, getSpecialVideos, getViralVideoCount, queryVideosAdvanced, createSyncJob, listJobs, getJobStatus, getSetting, setSetting, getSettings } from './storage.js';
+import { 
+  ensureDatabase, 
+  upsertVideos, 
+  queryVideos, 
+  upsertChannel, 
+  listChannels, 
+  removeChannel, 
+  getChannel, 
+  getChannelTrends, 
+  getTopVideos, 
+  getSpecialVideos, 
+  getViralVideoCount, 
+  queryVideosAdvanced, 
+  createSyncJob, 
+  listJobs, 
+  getJobStatus, 
+  getSetting, 
+  setSetting, 
+  getSettings, 
+  getTopicStats, 
+  getVideosByTopic, 
+  extractAndAssociateHashtags 
+} from './storage.js';
+
 import { syncChannelVideos as syncYouTubeVideos, getChannelByHandle as getYouTubeChannelByHandle } from './youtube.js';
 import { syncChannelReels as syncInstagramReels, getChannelByHandle as getInstagramChannelByHandle } from './instagram.js';
 import QueueManager from './queue-manager.js';
@@ -251,6 +274,29 @@ function createServer() {
       res.json({ ok: true, message: 'Scheduled sync triggered successfully' });
     } catch (error) {
       res.status(500).json({ error: error.message || 'Failed to trigger scheduled sync' });
+    }
+  });
+
+  // Topics API endpoints
+  app.get('/api/topics', (req, res) => {
+    try {
+      const stats = getTopicStats();
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ error: error.message || 'Failed to fetch topic statistics' });
+    }
+  });
+
+  app.get('/api/topics/:topicName/videos', (req, res) => {
+    try {
+      const topicName = req.params.topicName;
+      const page = Number(req.query.page || 1);
+      const pageSize = Math.min(200, Number(req.query.pageSize || 50));
+      
+      const result = getVideosByTopic(topicName, { page, pageSize });
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error.message || 'Failed to fetch videos for topic' });
     }
   });
 

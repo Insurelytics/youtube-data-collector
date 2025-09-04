@@ -353,8 +353,6 @@ function createServer() {
           videoCount: topic.videos.length,
           category: categoryInfo.category,
           group: categoryInfo.group,
-          x: Math.random() * 600 + 100, // Random positions, physics will handle layout
-          y: Math.random() * 400 + 100,
           description: `${topic.name} content with ${topic.videos.length} videos`,
           topVideos: topic.topVideos
         };
@@ -362,16 +360,25 @@ function createServer() {
       
       // Transform connections to relationships
       const relationships = [];
+      const addedRelationships = new Set(); // Track added relationships to avoid duplicates
       topicGraph.forEach((topic, sourceIndex) => {
         topic.connections.forEach(connection => {
           const targetIndex = topicGraph.findIndex(t => t.name === connection.topic.name);
-          if (targetIndex !== -1 && sourceIndex < targetIndex) { // Avoid duplicates
-            relationships.push({
-              source: sourceIndex + 1,
-              target: targetIndex + 1,
-              strength: connection.weight, // Frontend expects 'strength' instead of 'weight'
-              label: `${topic.name} - ${connection.topic.name}`
-            });
+          if (targetIndex !== -1) {
+            // Create a unique key for this relationship (always use smaller index first)
+            const relKey = sourceIndex < targetIndex 
+              ? `${sourceIndex}-${targetIndex}` 
+              : `${targetIndex}-${sourceIndex}`;
+            
+            if (!addedRelationships.has(relKey)) {
+              addedRelationships.add(relKey);
+              relationships.push({
+                source: sourceIndex + 1,
+                target: targetIndex + 1,
+                strength: connection.weight, // Frontend expects 'strength' instead of 'weight'
+                label: `${topic.name} - ${connection.topic.name}`
+              });
+            }
           }
         });
       });

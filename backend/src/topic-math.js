@@ -27,7 +27,7 @@ class Topic {
 }
 
 // return a force directed graph of topics along with their engagement multiplier and other metrics
-export function getTopicGraph() {
+export function getTopicGraph(regularizationWeight = 10, minimumSampleSize = 5) {
     // 1: Get all videos from the database
     const videos = getAllVideos();
     // 2: Compute engagement score for each video
@@ -55,11 +55,15 @@ export function getTopicGraph() {
         const topicVideos = matchingVideoTopics.map(videoTopic => videos.find(video => video.id === videoTopic.video_id));
         const nonNullVideos = topicVideos.filter(v => v !== undefined);
         return new Topic(topic.name, 0, 0, nonNullVideos);
-    });
+    }).filter(topic => topic.videos.length >= minimumSampleSize);
     // 5: Compute topic engagement score by using the scores of the videos that are associated with the topic
     topicObjects.forEach(topic => {
         // how much does this topic affect engagement score? What's the average engagement score for the videos associated with this topic?
-        topic.engagementMultiplier = topic.videos.reduce((sum, video)=> sum + video.normalizedEngagementScore, 0) / topic.videos.length;
+        // Apply regularization to prevent low sample sizes from being weighted too heavily
+        // We add virtual examples with average engagement (1.0) to smooth the calculation
+        const actualSum = topic.videos.reduce((sum, video)=> sum + video.normalizedEngagementScore, 0);
+        const virtualSum = regularizationWeight * 1.0; // regularizationWeight examples with average engagement
+        topic.engagementMultiplier = (actualSum + virtualSum) / (topic.videos.length + regularizationWeight);
         
         // 5.1: Get top 3 videos by raw engagement score for this topic
         const sortedVideos = topic.videos
@@ -90,7 +94,13 @@ export function getTopicGraph() {
     }); 
     // 7: Limit to the top 5 connections for each topic
     topicObjects.forEach(topic => {
-        topic.connections.sort((a, b) => b.weight - a.weight);
+        topic.connections.sort((a, b) => {
+            // If weights are equal, sort by topic name for deterministic ordering
+            if (b.weight === a.weight) {
+                return a.topic.name.localeCompare(b.topic.name);
+            }
+            return b.weight - a.weight;
+        });
         topic.connections = topic.connections.slice(0, 5);
     });   
     // 8: return the topic objects

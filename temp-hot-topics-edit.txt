@@ -1,0 +1,3 @@
+Need to remove the TabsContent wrapper and massive force graph code block.
+
+Let me use a different approach - just rewrite the ending part of the component to remove the tabs structure entirely.

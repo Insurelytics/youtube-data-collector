@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Network, Grid3X3, Flame, ChevronDown, Eye, MessageCircle, Heart, LinkIcon } from "lucide-react"
+import { Network, Grid3X3, Flame, ChevronDown, Eye, MessageCircle, Heart, LinkIcon, HelpCircle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,6 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import TopicForceGraph from "@/components/TopicForceGraph"
 
 // Enhanced mock data with topic connections and video details
 const initialTopicsData = [
@@ -183,101 +185,13 @@ const groups = {
   "general": { color: "bg-gray-500", label: "General", centerX: 400, centerY: 250 },
 }
 
-// Precompute final positions using physics simulation
-function precomputePositions(inputTopics = initialTopicsData, inputRelationships = initialRelationships) {
-  let topics = [...inputTopics]
-  const maxSteps = 100
-  const timeStep = 0.1
-
-  // Ensure topics have initial positions
-  topics = topics.map(topic => ({
-    ...topic,
-    x: topic.x || Math.random() * 600 + 100,
-    y: topic.y || Math.random() * 400 + 100
-  }))
-
-  for (let step = 0; step < maxSteps; step++) {
-    topics = topics.map((topic) => {
-      let fx = 0
-      let fy = 0
-
-      // Weak center attraction to prevent drift
-      const centerX = 400
-      const centerY = 250
-      fx += (centerX - topic.x) * 0.01
-      fy += (centerY - topic.y) * 0.01
-
-      // General repulsion between all nodes (prevent overlap)
-      topics.forEach((other) => {
-        if (other.id !== topic.id) {
-          const dx = topic.x - other.x
-          const dy = topic.y - other.y
-          const distance = Math.sqrt(dx * dx + dy * dy)
-
-          if (distance > 0 && distance < 80) {
-            const repelForce = (80 - distance) * 2.0
-            fx += (dx / distance) * repelForce
-            fy += (dy / distance) * repelForce
-          }
-        }
-      })
-
-      // PID Spring forces for connected nodes
-      inputRelationships.forEach((rel) => {
-        if (rel.source === topic.id || rel.target === topic.id) {
-          const otherId = rel.source === topic.id ? rel.target : rel.source
-          const other = topics.find((t) => t.id === otherId)
-          if (other) {
-            const dx = other.x - topic.x
-            const dy = other.y - topic.y
-            const currentDistance = Math.sqrt(dx * dx + dy * dy)
-
-            // Desired distance based on relationship strength
-            let desiredDistance
-            if (rel.strength > 0.7) {
-              desiredDistance = 80
-            } else if (rel.strength > 0.4) {
-              desiredDistance = 120
-            } else {
-              desiredDistance = 180
-            }
-
-            if (currentDistance > 0) {
-              const error = currentDistance - desiredDistance
-              const kP = 0.1 * rel.strength
-              const proportionalForce = error * kP
-
-              fx += (dx / currentDistance) * proportionalForce
-              fy += (dy / currentDistance) * proportionalForce
-            }
-          }
-        }
-      })
-
-      // Apply forces with fixed timestep and damping
-      const damping = 0.7
-      const newX = Math.max(50, Math.min(750, topic.x + fx * timeStep * damping))
-      const newY = Math.max(50, Math.min(450, topic.y + fy * timeStep * damping))
-
-      return {
-        ...topic,
-        x: newX,
-        y: newY,
-      }
-    })
-  }
-
-  return topics
-}
-
-// Precompute the final positions for fallback data
-const precomputedTopics = precomputePositions()
+// Precompute the final positions for fallback data (using mock data)
+const precomputedTopics = initialTopicsData
 
 export default function HotTopics() {
   const [topics, setTopics] = useState(precomputedTopics) // Start with mock data, replace with API data
   const [relationships, setRelationships] = useState(initialRelationships)
   const [selectedTopic, setSelectedTopic] = useState<number | null>(null)
-  const [viewBox, setViewBox] = useState("0 0 800 500")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -293,9 +207,7 @@ export default function HotTopics() {
         const data = await response.json()
         
         if (data.topics && data.relationships) {
-          // Apply physics simulation to the API data
-          const topicsWithPhysics = precomputePositions(data.topics, data.relationships)
-          setTopics(topicsWithPhysics)
+          setTopics(data.topics)
           setRelationships(data.relationships)
         }
       } catch (err) {
@@ -310,33 +222,6 @@ export default function HotTopics() {
     fetchTopicGraph()
   }, [])
 
-  // Calculate zoom and pan to fit all nodes with 5% margin
-  useEffect(() => {
-    const margin = 0.05 // 5% margin
-    const nodeRadius = 30 // Maximum node radius
-
-    // Find bounds of all nodes
-    const minX = Math.min(...topics.map((t) => t.x)) - nodeRadius
-    const maxX = Math.max(...topics.map((t) => t.x)) + nodeRadius
-    const minY = Math.min(...topics.map((t) => t.y)) - nodeRadius
-    const maxY = Math.max(...topics.map((t) => t.y)) + nodeRadius
-
-    // Calculate content dimensions
-    const contentWidth = maxX - minX
-    const contentHeight = maxY - minY
-
-    // Add margins
-    const marginX = contentWidth * margin
-    const marginY = contentHeight * margin
-
-    const viewBoxX = minX - marginX
-    const viewBoxY = minY - marginY
-    const viewBoxWidth = contentWidth + 2 * marginX
-    const viewBoxHeight = contentHeight + 2 * marginY
-
-    setViewBox(`${viewBoxX} ${viewBoxY} ${viewBoxWidth} ${viewBoxHeight}`)
-  }, [topics])
-
   const formatNumber = (num: number) => {
     if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
     if (num >= 1000) return `${(num / 1000).toFixed(1)}K`
@@ -345,12 +230,6 @@ export default function HotTopics() {
 
   const formatMultiplier = (multiplier: number) => {
     return `${multiplier.toFixed(1)}x`
-  }
-
-  const getMultiplierColor = (multiplier: number) => {
-    if (multiplier >= 1.2) return "text-green-600 bg-green-50"
-    if (multiplier >= 0.8) return "text-yellow-600 bg-yellow-50"
-    return "text-red-600 bg-red-50"
   }
 
   const getCategoryColor = (category: string) => {
@@ -366,12 +245,19 @@ export default function HotTopics() {
     }
   }
 
-  const getNodeSize = (videoCount: number) => {
-    return Math.max(30, Math.min(60, videoCount / 2))
-  }
-
   const getProgressValue = (multiplier: number) => {
-    return Math.min((multiplier / 5) * 100, 100)
+    // Scale: 0.33 = 0%, 1.0 = 50%, 3.0 = 100%
+    const min = 0.33
+    const center = 1.0
+    const max = 3.0
+    
+    if (multiplier <= center) {
+      // Scale from 0-50% for 0.33-1.0 range
+      return Math.max(0, ((multiplier - min) / (center - min)) * 50)
+    } else {
+      // Scale from 50-100% for 1.0-3.0 range
+      return Math.min(100, 50 + ((multiplier - center) / (max - center)) * 50)
+    }
   }
 
   const getTopConnections = (topicId: number) => {
@@ -387,17 +273,17 @@ export default function HotTopics() {
       .slice(0, 3)
   }
 
-  const getSVGFillClass = (bgClass: string) => {
-    const colorMap: { [key: string]: string } = {
-      "bg-purple-500": "fill-purple-500",
-      "bg-blue-500": "fill-blue-500",
-      "bg-green-500": "fill-green-500",
-      "bg-orange-500": "fill-orange-500",
-      "bg-red-500": "fill-red-500",
-      "bg-pink-500": "fill-pink-500",
-    }
-    return colorMap[bgClass] || "fill-gray-500"
+  const getMultiplierColorClass = (multiplier: number) => {
+    // Color based on engagement performance for text
+    if (multiplier >= 1.8) return "text-emerald-600"
+    if (multiplier >= 1.5) return "text-green-600"
+    if (multiplier >= 1.2) return "text-lime-600"
+    if (multiplier >= 1.05) return "text-yellow-600"
+    if (multiplier >= 0.95) return "text-yellow-600"
+    if (multiplier >= 0.8) return "text-orange-600"
+    return "text-red-600"
   }
+
 
   if (loading) {
     return (
@@ -439,126 +325,63 @@ export default function HotTopics() {
         </p>
       </div>
 
-      <Tabs defaultValue="force-graph" className="space-y-6">
+      <Tabs defaultValue="visual-cards" className="space-y-6">
         <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="force-graph" className="flex items-center gap-2">
-            <Network className="h-5 w-5" />
-            Force Graph
-          </TabsTrigger>
+          
           <TabsTrigger value="visual-cards" className="flex items-center gap-2">
             <Grid3X3 className="h-5 w-5" />
-            Visual Cards
+            Top Performing
+          </TabsTrigger>
+          <TabsTrigger value="force-graph" className="flex items-center gap-2">
+            <Network className="h-5 w-5" />
+            Connections Graph
           </TabsTrigger>
         </TabsList>
 
         {/* Force Graph Tab */}
         <TabsContent value="force-graph" className="space-y-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Network className="h-6 w-6 text-blue-500" />
+              <h2 className="text-2xl font-semibold">Topic Connections Graph</h2>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                    <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-96" align="start">
+                  <div className="space-y-3 text-sm">
+                    <h4 className="font-semibold">Understanding the Graph</h4>
+                    <p>
+                      <strong>Node Size:</strong> Larger circles represent topics with more videos (higher video count). 
+                      Size is based on how many videos contain that topic.
+                    </p>
+                    <p>
+                      <strong>Node Color:</strong> Colors show engagement performance - green for excellent (1.8x+), 
+                      yellow for good/average (1.0-1.5x), orange/red for below average (&lt;1.0x).
+                    </p>
+                    <p>
+                      <strong>Connections:</strong> Curved lines show how often topics appear together in the same videos. 
+                      Thicker, more opaque lines indicate stronger co-occurrence relationships.
+                    </p>
+                    <p>
+                      <strong>Interaction:</strong> Use mouse wheel to zoom, drag to pan the graph. 
+                      Click any topic to see detailed information.
+                    </p>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
           <div className="grid gap-6 lg:grid-cols-4">
             <div className="lg:col-span-3">
-              <Card className="h-[600px]">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Network className="h-5 w-5" />
-                    Topic Relationship Network
-                  </CardTitle>
-                  <CardDescription>
-                    Interactive force-directed graph showing topic clusters and cross-category connections
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="h-full p-0">
-                  <div className="relative w-full h-[500px] bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg overflow-hidden">
-                    <svg width="100%" height="100%" viewBox={viewBox} className="absolute inset-0">
-                      {/* Relationship lines with similarity-based styling */}
-                      {relationships.map((rel, index) => {
-                        const source = topics.find((t) => t.id === rel.source)
-                        const target = topics.find((t) => t.id === rel.target)
-                        if (!source || !target) return null
-
-                        // Color and style based on similarity strength
-                        const isHighSimilarity = rel.strength > 0.5
-
-                        let strokeColor = "#94a3b8" // Default gray
-                        let strokeOpacity = 0.4
-
-                        if (isHighSimilarity) {
-                          strokeColor = "#10b981" // Green for strong connections
-                          strokeOpacity = 0.8
-                        } else {
-                          strokeColor = "#ef4444" // Red for weak connections
-                          strokeOpacity = 0.3
-                        }
-
-                        const strokeWidth = 1 + rel.strength * 2
-
-                        return (
-                          <line
-                            key={index}
-                            x1={source.x}
-                            y1={source.y}
-                            x2={target.x}
-                            y2={target.y}
-                            stroke={strokeColor}
-                            strokeWidth={strokeWidth}
-                            strokeOpacity={strokeOpacity}
-                            strokeDasharray={!isHighSimilarity ? "2,4" : "none"}
-                          />
-                        )
-                      })}
-
-                      {/* Topic nodes as SVG circles */}
-                      {topics.map((topic) => {
-                        const size = getNodeSize(topic.videoCount)
-                        const radius = size / 2
-
-                        return (
-                          <g key={topic.id}>
-                            <circle
-                              cx={topic.x}
-                              cy={topic.y}
-                              r={radius}
-                              className={`cursor-pointer ${getSVGFillClass(groups[topic.group as keyof typeof groups]?.color || "bg-gray-500")}`}
-                              style={{
-                                filter:
-                                  selectedTopic === topic.id
-                                    ? "drop-shadow(0 0 8px rgba(0,0,0,0.3))"
-                                    : "drop-shadow(0 2px 4px rgba(0,0,0,0.1))",
-                              }}
-                              onClick={() => setSelectedTopic(selectedTopic === topic.id ? null : topic.id)}
-                            />
-                            <text
-                              x={topic.x}
-                              y={topic.y}
-                              textAnchor="middle"
-                              dominantBaseline="middle"
-                              className="fill-gray-800 font-bold pointer-events-none select-none"
-                              style={{
-                                fontSize: `${Math.max(8, size / 6)}px`,
-                              }}
-                            >
-                              {topic.topic}
-                            </text>
-                          </g>
-                        )
-                      })}
-                    </svg>
-
-                    {/* Updated Legend */}
-                    <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm rounded-lg p-3 text-xs">
-                      <div className="font-semibold mb-2">Connections</div>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-0.5 bg-green-500"></div>
-                          <span>High Similarity</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-0.5 bg-red-400 opacity-60" style={{ borderTop: "2px dashed" }}></div>
-                          <span>Low Similarity</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              <TopicForceGraph
+                topics={topics}
+                relationships={relationships}
+                selectedTopic={selectedTopic}
+                onTopicSelect={setSelectedTopic}
+              />
             </div>
 
             {/* Sidebar for Force Graph */}
@@ -602,20 +425,22 @@ export default function HotTopics() {
                           <div>
                             <p className="text-sm font-medium mb-2">Connected Topics</p>
                             <div className="space-y-1">
-                              {connections.map((conn, index) => {
-                                const connectedId = conn.source === topic.id ? conn.target : conn.source
-                                const connectedTopic = topics.find((t) => t.id === connectedId)
-                                if (!connectedTopic) return null
+                              {connections
+                                .sort((a, b) => b.strength - a.strength)
+                                .map((conn, index) => {
+                                  const connectedId = conn.source === topic.id ? conn.target : conn.source
+                                  const connectedTopic = topics.find((t) => t.id === connectedId)
+                                  if (!connectedTopic) return null
 
-                                return (
-                                  <div key={index} className="flex items-center justify-between text-xs">
-                                    <div className="flex items-center gap-1">
-                                      <span>{connectedTopic.topic}</span>
+                                  return (
+                                    <div key={index} className="flex items-center justify-between text-xs">
+                                      <div className="flex items-center gap-1">
+                                        <span>{connectedTopic.topic}</span>
+                                      </div>
+                                      <Badge variant="outline">{(conn.strength * 100).toFixed(0)}%</Badge>
                                     </div>
-                                    <Badge variant="outline">{(conn.strength * 100).toFixed(0)}%</Badge>
-                                  </div>
-                                )
-                              })}
+                                  )
+                                })}
                             </div>
                           </div>
                         </div>
@@ -662,10 +487,178 @@ export default function HotTopics() {
 
         {/* Visual Cards Tab */}
         <TabsContent value="visual-cards" className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {topics
-              .sort((a, b) => b.engagementMultiplier - a.engagementMultiplier)
-              .map((topic) => {
+          {/* High Impact Topics Section */}
+          <div className="mb-8">
+            <div className="flex items-center gap-2 mb-4">
+              <Flame className="h-6 w-6 text-orange-500" />
+              <h2 className="text-2xl font-semibold">High Impact Topics</h2>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                    <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-96" align="start">
+                  <div className="space-y-3 text-sm">
+                    <h4 className="font-semibold">How Topic Analysis Works</h4>
+                    <p>
+                      <strong>Engagement Multiplier:</strong> Shows how much better (or worse) videos with this topic perform compared to the average. 
+                      For example, a 2.5x multiplier means videos with this topic get 2.5 times more engagement than typical videos from the same channel.
+                    </p>
+                    <p>
+                      <strong>How it's calculated:</strong> We compare each video's likes, comments, and views to other videos from the same creator, 
+                      then average the results for all videos tagged with that topic. This accounts for different channel sizes and audiences.
+                    </p>
+                    <p>
+                      <strong>Topic Connections:</strong> Shows which topics frequently appear together in the same videos, helping you understand 
+                      content clusters and cross-topic opportunities.
+                    </p>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div className="grid gap-6 md:grid-cols-2">
+              {topics
+                .sort((a, b) => b.engagementMultiplier - a.engagementMultiplier)
+                .slice(0, 2)
+                .map((topic) => {
+                  const topConnections = getTopConnections(topic.id)
+
+                  return (
+                    <Card
+                      key={topic.id}
+                      className="relative overflow-hidden border-2 border-orange-200 bg-gradient-to-br from-orange-50 to-red-50"
+                    >
+                      <div className="absolute top-2 right-2">
+                        <Badge className="bg-orange-500 text-white">
+                          <Flame className="h-3 w-3 mr-1" />
+                          Hot
+                        </Badge>
+                      </div>
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <CardTitle className="text-xl">{topic.topic}</CardTitle>
+                            <CardDescription className="mt-1">{topic.description}</CardDescription>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className={getCategoryColor(topic.category)}>
+                            {topic.category}
+                          </Badge>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div>
+                            <div className="flex justify-between text-sm mb-1">
+                              <span>Engagement Multiplier</span>
+                              <span className="font-semibold text-green-600">
+                                {formatMultiplier(topic.engagementMultiplier)}
+                              </span>
+                            </div>
+                            <Progress value={getProgressValue(topic.engagementMultiplier)} className="h-2" />
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {topic.engagementMultiplier >= 1.8
+                                ? "Excellent"
+                                : topic.engagementMultiplier >= 1.5
+                                  ? "Very Good"
+                                  : topic.engagementMultiplier >= 1.2
+                                    ? "Good"
+                                    : topic.engagementMultiplier >= 1.05
+                                      ? "Above Average"
+                                      : topic.engagementMultiplier >= 0.95
+                                        ? "Average"
+                                        : topic.engagementMultiplier >= 0.8
+                                          ? "Below Average"
+                                          : "Poor"}
+                            </div>
+                          </div>
+
+                          <div className="text-sm">
+                            <span className="text-muted-foreground">{topic.videoCount} videos</span>
+                          </div>
+
+                          {/* Top Videos Dropdown */}
+                          <Collapsible>
+                            <CollapsibleTrigger asChild>
+                              <Button variant="outline" size="sm" className="w-full justify-between bg-transparent">
+                                <div className="flex items-center gap-2">
+                                  <Eye className="h-3 w-3" />
+                                  Top 3 Videos
+                                </div>
+                                <ChevronDown className="h-3 w-3" />
+                              </Button>
+                            </CollapsibleTrigger>
+                            <CollapsibleContent className="space-y-2 mt-2">
+                              {topic.topVideos.map((video, index) => (
+                                <div key={index} className="p-2 bg-muted/30 rounded text-xs">
+                                  <div className="font-medium line-clamp-2 mb-1">{video.title}</div>
+                                  <div className="flex items-center gap-3 text-muted-foreground">
+                                    <div className="flex items-center gap-1">
+                                      <Eye className="h-2 w-2" />
+                                      {formatNumber(video.views)}
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <MessageCircle className="h-2 w-2" />
+                                      {formatNumber(video.comments)}
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <Heart className="h-2 w-2" />
+                                      {formatNumber(video.likes)}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </CollapsibleContent>
+                          </Collapsible>
+
+                          {/* Top Connections Dropdown */}
+                          {topConnections.length > 0 && (
+                            <Collapsible>
+                              <CollapsibleTrigger asChild>
+                                <Button variant="outline" size="sm" className="w-full justify-between bg-transparent">
+                                  <div className="flex items-center gap-2">
+                                    <LinkIcon className="h-3 w-3" />
+                                    Top 3 Connections
+                                  </div>
+                                  <ChevronDown className="h-3 w-3" />
+                                </Button>
+                              </CollapsibleTrigger>
+                              <CollapsibleContent className="space-y-2 mt-2">
+                                {topConnections.map((connection, index) => (
+                                  <div key={index} className="p-2 bg-muted/30 rounded text-xs">
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="font-medium">{connection?.topic}</span>
+                                      <Badge variant="outline" className="text-xs">
+                                        {((connection?.strength || 0) * 100).toFixed(0)}%
+                                      </Badge>
+                                    </div>
+                                    <div className="text-muted-foreground">{connection?.label}</div>
+                                  </div>
+                                ))}
+                              </CollapsibleContent>
+                            </Collapsible>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+            </div>
+          </div>
+
+          {/* All Topics Section */}
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <Grid3X3 className="h-6 w-6 text-blue-500" />
+              <h2 className="text-2xl font-semibold">All Topics</h2>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {topics
+                .sort((a, b) => b.engagementMultiplier - a.engagementMultiplier)
+                .map((topic) => {
                 const topConnections = getTopConnections(topic.id)
 
                 return (
@@ -684,18 +677,26 @@ export default function HotTopics() {
                         <div className="flex justify-between text-sm mb-1">
                           <span>Engagement Multiplier</span>
                           <span
-                            className={`font-semibold ${getMultiplierColor(topic.engagementMultiplier).split(" ")[0]}`}
+                            className={`font-semibold ${getMultiplierColorClass(topic.engagementMultiplier)}`}
                           >
                             {formatMultiplier(topic.engagementMultiplier)}
                           </span>
                         </div>
                         <Progress value={getProgressValue(topic.engagementMultiplier)} className="h-2" />
                         <div className="text-xs text-muted-foreground mt-1">
-                          {topic.engagementMultiplier >= 1.2
-                            ? "Above Average"
-                            : topic.engagementMultiplier >= 0.8
-                              ? "Near Average"
-                              : "Below Average"}
+                          {topic.engagementMultiplier >= 1.8
+                            ? "Excellent"
+                            : topic.engagementMultiplier >= 1.5
+                              ? "Very Good"
+                              : topic.engagementMultiplier >= 1.2
+                                ? "Good"
+                                : topic.engagementMultiplier >= 1.05
+                                  ? "Above Average"
+                                  : topic.engagementMultiplier >= 0.95
+                                    ? "Average"
+                                    : topic.engagementMultiplier >= 0.8
+                                      ? "Below Average"
+                                      : "Poor"}
                         </div>
                       </div>
 
@@ -768,6 +769,7 @@ export default function HotTopics() {
                   </Card>
                 )
               })}
+            </div>
           </div>
         </TabsContent>
       </Tabs>

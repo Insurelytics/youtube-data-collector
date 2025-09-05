@@ -3,7 +3,7 @@
 
 import FormData from 'form-data';
 import Mailgun from 'mailgun.js';
-import { getSetting } from './storage.js';
+import { getSetting } from '../database/storage.js';
 
 async function sendEmail(to, subject, text, html = null) {
   const mailgun = new Mailgun(FormData);

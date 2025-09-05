@@ -1,12 +1,12 @@
 import Database from 'better-sqlite3';
-import { getEngagementSqlExpression } from './engagement-utils.js';
+import { getEngagementSqlExpression } from '../utils/engagement-utils.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DB_PATH = path.join(__dirname, '..', 'data.sqlite');
+const DB_PATH = path.join(__dirname, '../..', 'data.sqlite');
 
 let db;
 

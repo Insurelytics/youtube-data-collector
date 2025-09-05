@@ -1,8 +1,8 @@
 import { updateSyncJob, getNextPendingJob } from './storage.js';
 import { syncChannelVideos as syncYouTubeVideos } from './youtube.js';
 import { syncChannelReels as syncInstagramReels } from './instagram.js';
-import { upsertChannel, upsertVideos } from './storage.js';
-import { downloadImage } from './image-utils.js';
+import { upsertChannel } from './storage.js';
+import { performSmartScraping } from './scraping-orchestrator.js';
 
 const MAX_SYNC_DAYS = 36500; // ~100 years
 
@@ -64,19 +64,6 @@ class QueueManager {
             
             if (job.platform === 'instagram') {
                 result = await syncInstagramReels({ handle: job.handle, sinceDays });
-                
-                // Download images for Instagram reels
-                if (result.reels) {
-                    console.log(`Downloading ${result.reels.length} Instagram reel images...`);
-                    for (const reel of result.reels) {
-                        if (reel.displayUrl) {
-                            const localImageUrl = await downloadImage(reel.displayUrl, reel.id);
-                            if (localImageUrl) {
-                                reel.localImageUrl = localImageUrl;
-                            }
-                        }
-                    }
-                }
             } else {
                 // Default to YouTube
                 result = await syncYouTubeVideos({ apiKey, handle: job.handle, sinceDays });
@@ -105,12 +92,12 @@ class QueueManager {
                 channelData.externalUrls = profileData.externalUrls ? JSON.stringify(profileData.externalUrls) : null;
             }
             
-            // Count new vs updated videos (simplified - in reality you'd track this during upsert)
-            const newVideos = content.length; // For now, assume all are new
-            const updatedVideos = 0; // We don't currently track updates vs inserts
-            
+            // Store channel data
             upsertChannel(channelData);
-            upsertVideos(content);
+            
+            // Use smart scraping to handle new vs existing videos appropriately
+            const scrapingResults = await performSmartScraping(content, job.platform);
+            const { newVideos, updatedVideos } = scrapingResults;
 
             console.log(`Job ${job.id} completed successfully. Synced ${content.length} items for ${channelTitle}`);
             

@@ -4,6 +4,8 @@ import { getLastPublishedDate } from './storage.js';
 
 dotenv.config();
 
+const engagementLookbackWindow = 1; // days
+
 // Initialize the ApifyClient with API token from .env
 const client = new ApifyClient({
   token: process.env.APIFY_API_KEY,
@@ -35,6 +37,12 @@ export async function syncChannelReels({ handle, sinceDays }) {
     sinceIsoDate = sinceDate.toISOString().split('T')[0]; // YYYY-MM-DD format
     console.log(`No previous posts found, using ${sinceDays} days ago (${sinceIsoDate}) for Instagram channel ${handle}`);
   }
+
+  // Move sinceIsoDate back by engagementLookbackWindow days to capture engagement data
+  const adjustedSinceDate = new Date(sinceIsoDate);
+  adjustedSinceDate.setDate(adjustedSinceDate.getDate() - engagementLookbackWindow);
+  sinceIsoDate = adjustedSinceDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+  console.log(`Adjusted date back by ${engagementLookbackWindow} days to ${sinceIsoDate} for engagement tracking`);
 
   // Prepare Actor input to get profile details and posts
   const input = {

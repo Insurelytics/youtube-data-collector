@@ -12,6 +12,38 @@ if (!fs.existsSync(IMAGES_DIR)) {
   fs.mkdirSync(IMAGES_DIR, { recursive: true });
 }
 
+// Check if a local image exists for a video
+export function hasLocalImage(videoId) {
+  try {
+    const extensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+    return extensions.some(ext => {
+      const filepath = path.join(IMAGES_DIR, `${videoId}.${ext}`);
+      return fs.existsSync(filepath);
+    });
+  } catch (error) {
+    console.error(`Error checking for local image ${videoId}:`, error);
+    return false;
+  }
+}
+
+// Get the local image URL for a video if it exists
+export function getLocalImageUrl(videoId) {
+  try {
+    const extensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+    for (const ext of extensions) {
+      const filename = `${videoId}.${ext}`;
+      const filepath = path.join(IMAGES_DIR, filename);
+      if (fs.existsSync(filepath)) {
+        return `/api/images/${filename}`;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error(`Error getting local image URL for ${videoId}:`, error);
+    return null;
+  }
+}
+
 // Download image from URL and save to local filesystem
 export async function downloadImage(imageUrl, videoId) {
   try {

@@ -27,7 +27,11 @@ import {
   getSettings, 
   getTopicStats, 
   getVideosByTopic, 
-  extractAndAssociateHashtags 
+  extractAndAssociateHashtags,
+  videoExists,
+  getExistingVideoIds,
+  updateEngagementMetrics,
+  cleanupOrphanedRunningJobs
 } from './storage.js';
 import { getTopicRanking, getTopicGraph } from './topic-math.js';
 
@@ -41,7 +45,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4000;
 const IMAGES_DIR = path.join(__dirname, '../images');
 const DEFAULT_DAYS = 36500; // forever
 // Use a very large window for syncing so we fetch as much history as possible
@@ -55,6 +59,9 @@ if (!fs.existsSync(IMAGES_DIR)) {
 
 function createServer() {
   ensureDatabase();
+
+  // Clean up any jobs that were left in 'running' state from previous server sessions
+  cleanupOrphanedRunningJobs();
 
   // Initialize queue manager
   const queueManager = new QueueManager();

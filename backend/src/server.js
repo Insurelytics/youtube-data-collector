@@ -8,7 +8,6 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { 
   ensureDatabase, 
-  upsertVideos, 
   queryVideos, 
   upsertChannel, 
   listChannels, 
@@ -22,24 +21,18 @@ import {
   createSyncJob, 
   listJobs, 
   getJobStatus, 
-  getSetting, 
   setSetting, 
   getSettings, 
   getTopicStats, 
   getVideosByTopic, 
-  extractAndAssociateHashtags,
-  videoExists,
-  getExistingVideoIds,
-  updateEngagementMetrics,
   cleanupOrphanedRunningJobs
 } from './storage.js';
 import { getTopicRanking, getTopicGraph } from './topic-math.js';
 
-import { syncChannelVideos as syncYouTubeVideos, getChannelByHandle as getYouTubeChannelByHandle } from './youtube.js';
-import { syncChannelReels as syncInstagramReels, getChannelByHandle as getInstagramChannelByHandle } from './instagram.js';
+import { getChannelByHandle as getYouTubeChannelByHandle } from './youtube.js';
+import { getChannelByHandle as getInstagramChannelByHandle } from './instagram.js';
 import QueueManager from './queue-manager.js';
 import { initScheduler, triggerScheduledSync } from './schedule.js';
-import { downloadImage } from './image-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

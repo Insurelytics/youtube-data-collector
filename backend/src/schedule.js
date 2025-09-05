@@ -172,7 +172,7 @@ async function shouldRunJob() {
     // Get settings with fallbacks
     const enableScheduling = scheduleSettings.emailNotifications || process.env.ENABLE_SCHEDULING === 'true';
     const frequency = scheduleSettings.scrapeFrequency || process.env.SCHEDULE_FREQUENCY || 'daily';
-    const lastJobRunStr = getSetting('lastJobRun') || process.env.LAST_JOB_RUN; // ISO string
+    const lastJobRunStr = process.env.LAST_JOB_RUN || getSetting('lastJobRun'); // ISO string
     console.log('lastJobRunStr', lastJobRunStr);
     
     if (!enableScheduling) {

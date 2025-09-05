@@ -738,6 +738,70 @@ export function getTopicStats() {
 }
 
 // Function to get videos associated with a specific topic
+// Check if a video exists in the database
+export function videoExists(videoId) {
+  ensureDatabase();
+  const result = db.prepare('SELECT id FROM videos WHERE id = ?').get(videoId);
+  return !!result;
+}
+
+// Get list of existing video IDs from a list
+export function getExistingVideoIds(videoIds) {
+  ensureDatabase();
+  if (!videoIds || videoIds.length === 0) return [];
+  
+  const placeholders = videoIds.map(() => '?').join(',');
+  const results = db.prepare(`SELECT id FROM videos WHERE id IN (${placeholders})`).all(...videoIds);
+  return results.map(row => row.id);
+}
+
+// Update only engagement metrics for existing videos
+export function updateEngagementMetrics(videos) {
+  ensureDatabase();
+  const nowIso = new Date().toISOString();
+  
+  const stmt = db.prepare(`
+    UPDATE videos 
+    SET viewCount = ?, 
+        likeCount = ?, 
+        commentCount = ?, 
+        lastSyncedAt = ?
+    WHERE id = ?
+  `);
+
+  const tx = db.transaction((all) => {
+    for (const video of all) {
+      stmt.run(
+        video.viewCount ?? null,
+        video.likeCount ?? null,
+        video.commentCount ?? null,
+        nowIso,
+        video.id
+      );
+    }
+  });
+  
+  tx(videos);
+}
+
+// Clean up orphaned running jobs on server startup
+export function cleanupOrphanedRunningJobs() {
+  ensureDatabase();
+  const result = db.prepare(`
+    UPDATE sync_jobs 
+    SET status = 'failed', 
+        completed_at = ?, 
+        error_message = 'Job was interrupted by server restart'
+    WHERE status = 'running' OR status = 'pending'
+  `).run(new Date().toISOString());
+  
+  if (result.changes > 0) {
+    console.log(`Cleaned up ${result.changes} orphaned running jobs from previous server session`);
+  }
+  
+  return result.changes;
+}
+
 export function getVideosByTopic(topicName, { page = 1, pageSize = 50 } = {}) {
   ensureDatabase();
   const normalizedName = topicName.toLowerCase().trim();

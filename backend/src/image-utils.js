@@ -12,20 +12,6 @@ if (!fs.existsSync(IMAGES_DIR)) {
   fs.mkdirSync(IMAGES_DIR, { recursive: true });
 }
 
-// Check if a local image exists for a video
-export function hasLocalImage(videoId) {
-  try {
-    const extensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
-    return extensions.some(ext => {
-      const filepath = path.join(IMAGES_DIR, `${videoId}.${ext}`);
-      return fs.existsSync(filepath);
-    });
-  } catch (error) {
-    console.error(`Error checking for local image ${videoId}:`, error);
-    return false;
-  }
-}
-
 // Get the local image URL for a video if it exists
 export function getLocalImageUrl(videoId) {
   try {

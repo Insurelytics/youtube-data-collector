@@ -1,4 +1,5 @@
 import { downloadImage, getLocalImageUrl } from './image-utils.js';
+import { processVideo } from './video-utils.js';
 import { upsertVideos, updateEngagementMetrics, getExistingVideoIds, extractAndAssociateHashtags } from './storage.js';
 
 /**
@@ -11,6 +12,7 @@ export async function performInitialScraping(videos, platform = 'youtube') {
   console.log(`Starting initial scraping for ${videos.length} new ${platform} videos...`);
   
   let processedCount = 0;
+  let videosProcessed = 0;
   
   // For Instagram videos, download images
   if (platform === 'instagram') {
@@ -26,15 +28,37 @@ export async function performInitialScraping(videos, platform = 'youtube') {
     }
   }
   
+  // Process videos (download, extract audio, filter silence)
+  for (const video of videos) {
+    try {
+      if (video.url) {
+        const videoResults = await processVideo(video.url, video.id, platform);
+        video.audioProcessing = {
+          originalDuration: videoResults.originalDuration,
+          filteredDuration: videoResults.filteredDuration,
+          durationDifference: videoResults.durationDifference,
+          silencePercentage: videoResults.silencePercentage,
+          originalAudioPath: videoResults.originalAudioPath,
+          filteredAudioPath: videoResults.filteredAudioPath
+        };
+        videosProcessed++;
+      }
+    } catch (error) {
+      console.error(`Failed to process video ${video.id}:`, error);
+      video.audioProcessing = { error: error.message };
+    }
+  }
+  
   // Store all video data (includes engagement metrics)
   upsertVideos(videos);
   
-  console.log(`Initial scraping completed: ${videos.length} new videos processed, ${processedCount} images downloaded`);
+  console.log(`Initial scraping completed: ${videos.length} new videos processed, ${processedCount} images downloaded, ${videosProcessed} videos processed`);
   
   return {
     newVideos: videos.length,
     processedVideos: videos.length,
-    imagesDownloaded: processedCount
+    imagesDownloaded: processedCount,
+    videosProcessed
   };
 }
 
@@ -101,7 +125,8 @@ export async function performSmartScraping(allVideos, platform = 'youtube') {
     newVideos: initialResults.newVideos,
     updatedVideos: rescrapingResults.updatedVideos,
     processedVideos: allVideos.length,
-    imagesDownloaded: initialResults.imagesDownloaded || 0
+    imagesDownloaded: initialResults.imagesDownloaded || 0,
+    videosProcessed: initialResults.videosProcessed || 0
   };
   
   console.log(`Smart scraping completed:`, totalResults);

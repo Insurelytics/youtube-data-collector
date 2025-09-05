@@ -1,6 +1,6 @@
 // Topic Ranking
-import { getAllVideos, getAllTopics, getAllVideoTopics } from './storage.js';
-import { calculateEngagementScore } from './engagement-utils.js';
+import { getAllVideos, getAllTopics, getAllVideoTopics } from '../database/storage.js';
+import { calculateEngagementScore } from '../utils/engagement-utils.js';
 
 // return a list of topics sorted by how positively they impact video engagement
 export function getTopicRanking(topics) {

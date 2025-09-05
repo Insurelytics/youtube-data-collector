@@ -26,13 +26,13 @@ import {
   getTopicStats, 
   getVideosByTopic, 
   cleanupOrphanedRunningJobs
-} from './storage.js';
-import { getTopicRanking, getTopicGraph } from './topic-math.js';
+} from './database/storage.js';
+import { getTopicRanking, getTopicGraph } from './topics/topic-math.js';
 
-import { getChannelByHandle as getYouTubeChannelByHandle } from './youtube.js';
-import { getChannelByHandle as getInstagramChannelByHandle } from './instagram.js';
-import QueueManager from './queue-manager.js';
-import { initScheduler, triggerScheduledSync } from './schedule.js';
+import { getChannelByHandle as getYouTubeChannelByHandle } from './scraping/youtube.js';
+import { getChannelByHandle as getInstagramChannelByHandle } from './scraping/instagram.js';
+import QueueManager from './scraping/queue-manager.js';
+import { initScheduler, triggerScheduledSync } from './scraping/schedule.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

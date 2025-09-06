@@ -10,6 +10,8 @@ class QueueManager {
     constructor() {
         this.isProcessing = false;
         this.currentJobId = null;
+        // In-memory progress tracking
+        this.jobProgress = new Map(); // jobId -> { currentStep, progressCurrent, progressTotal }
         
         // Start processing queue immediately
         this.processQueue();
@@ -51,6 +53,9 @@ class QueueManager {
                 status: 'running',
                 started_at: new Date().toISOString()
             });
+
+            // Initialize progress tracking
+            this.updateJobProgress(job.id, 'Getting channel info');
 
             // Get API key from environment
             const apiKey = process.env.API_KEY;
@@ -96,6 +101,8 @@ class QueueManager {
             console.log(`Channel ${channelTitle} stored in database, will now begin content scraping...`);
 
             // STEP 2: Now perform the content scraping
+            this.updateJobProgress(job.id, 'Scraping video info');
+            
             let result;
             const sinceDays = job.since_days || MAX_SYNC_DAYS;
             
@@ -109,14 +116,18 @@ class QueueManager {
             const { videos, reels } = result;
             const content = videos || reels || [];
             
-            // Use smart scraping to handle new vs existing videos appropriately
-            const scrapingResults = await performSmartScraping(content, job.platform);
+            // STEP 3: Use smart scraping to handle new vs existing videos appropriately
+            this.updateJobProgress(job.id, 'Processing videos');
+            
+            const scrapingResults = await performSmartScraping(content, job.platform, (step, current, total) => {
+                this.updateJobProgress(job.id, step, current, total);
+            });
             const { newVideos, updatedVideos } = scrapingResults;
 
             console.log(`Job ${job.id} completed successfully. Synced ${content.length} items for ${channelTitle}`);
             
             // Mark initial scrape as completed
-            upsertChannel({ id: channelId, title: channelTitle, handle: job.handle, initial_scrape_running: 0 });
+            upsertChannel({ id: channelId, title: channelTitle, handle: job.handle, platform: job.platform, initial_scrape_running: 0 });
             
             updateSyncJob(job.id, { 
                 status: 'completed',
@@ -149,7 +160,23 @@ class QueueManager {
 
     cleanup() {
         this.isProcessing = false;
+        if (this.currentJobId) {
+            this.jobProgress.delete(this.currentJobId);
+        }
         this.currentJobId = null;
+    }
+
+    // Methods to track and retrieve job progress
+    updateJobProgress(jobId, step, current = null, total = null) {
+        this.jobProgress.set(jobId, {
+            currentStep: step,
+            progressCurrent: current,
+            progressTotal: total
+        });
+    }
+
+    getJobProgress(jobId) {
+        return this.jobProgress.get(jobId) || null;
     }
 
     getCurrentJobId() {

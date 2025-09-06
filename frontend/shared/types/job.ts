@@ -8,6 +8,9 @@ export type Job = {
   endTime?: Date
   duration?: number
   currentTask?: string
+  currentStep?: string
+  progressCurrent?: number
+  progressTotal?: number
   videosProcessed: number
   videosFound?: number
   successCount?: number

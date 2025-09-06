@@ -39,7 +39,7 @@ const __dirname = path.dirname(__filename);
 
 
 const PORT = process.env.PORT || 4000;
-const IMAGES_DIR = path.join(__dirname, '../images');
+const IMAGES_DIR = path.join(__dirname, '../../images');
 const DEFAULT_DAYS = 36500; // forever
 // Use a very large window for syncing so we fetch as much history as possible
 const MAX_SYNC_DAYS = 36500; // ~100 years
@@ -84,8 +84,9 @@ function createServer() {
 
   app.get('/api/sync', async (req, res) => {
     if (!req.query.handle) return res.status(400).json({ error: 'Missing handle' });
+    if (!req.query.platform) return res.status(400).json({ error: 'Missing platform' });
     const handle = req.query.handle.toString();
-    const platform = (req.query.platform || 'youtube').toString();
+    const platform = req.query.platform.toString();
     const sinceDays = Number(req.query.sinceDays || MAX_SYNC_DAYS);
 
     // Validate API key for YouTube
@@ -136,7 +137,7 @@ function createServer() {
                 subscriberCount: info.subscriberCount, 
                 isActive: 1, 
                 thumbnailUrl: info.thumbnailUrl,
-                platform: ch.platform || 'youtube'
+                platform: ch.platform
               };
               
               // Add Instagram profile data if available
@@ -182,7 +183,8 @@ function createServer() {
   app.post('/api/channels', async (req, res) => {
     const handle = (req.body?.handle || '').toString();
     if (!handle) return res.status(400).json({ error: 'handle required' });
-    const platform = (req.body?.platform || 'youtube').toString();
+    if (!req.body?.platform) return res.status(400).json({ error: 'platform required' });
+    const platform = req.body.platform.toString();
 
     // Validate API key for YouTube
     if (platform === 'youtube' && !process.env.API_KEY) {
@@ -243,6 +245,23 @@ function createServer() {
       const limit = Math.min(200, Number(req.query.limit || 50));
       const offset = Number(req.query.offset || 0);
       const result = listJobs({ limit, offset });
+      
+      // Add real-time progress data for running jobs
+      result.jobs = result.jobs.map(job => {
+        if (job.status === 'running') {
+          const progress = queueManager.getJobProgress(job.id);
+          if (progress) {
+            return {
+              ...job,
+              current_step: progress.currentStep,
+              progress_current: progress.progressCurrent,
+              progress_total: progress.progressTotal
+            };
+          }
+        }
+        return job;
+      });
+      
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: error.message || 'Failed to fetch jobs' });
@@ -256,6 +275,16 @@ function createServer() {
       
       const job = getJobStatus(jobId);
       if (!job) return res.status(404).json({ error: 'Job not found' });
+      
+      // Add real-time progress data if job is running
+      if (job.status === 'running') {
+        const progress = queueManager.getJobProgress(jobId);
+        if (progress) {
+          job.current_step = progress.currentStep;
+          job.progress_current = progress.progressCurrent;
+          job.progress_total = progress.progressTotal;
+        }
+      }
       
       res.json(job);
     } catch (error) {

@@ -18,6 +18,9 @@ export interface BackendJob {
   videos_processed?: number
   new_videos?: number
   updated_videos?: number
+  current_step?: string
+  progress_current?: number
+  progress_total?: number
 }
 
 export interface JobsResponse {
@@ -36,15 +39,23 @@ export function transformBackendJob(backendJob: BackendJob) {
   const endTime = backendJob.completed_at ? new Date(backendJob.completed_at) : undefined
   const duration = endTime ? endTime.getTime() - startTime.getTime() : undefined
 
+  // Determine if this is an initial scrape (when since_days is null or very large)
+  const isInitialScrape = !backendJob.since_days || backendJob.since_days >= 36500;
+  const platformName = backendJob.platform === 'youtube' ? 'YouTube' : 'Instagram';
+  const jobType = isInitialScrape ? `${platformName} Initial Scrape` : `${platformName} Sync`;
+
   return {
     id: backendJob.id.toString(),
-    type: `${backendJob.platform} Sync`,
+    type: jobType,
     channelName: backendJob.channel_title || backendJob.handle,
     channelId: backendJob.channel_id || backendJob.handle,
     status: backendJob.status === 'pending' ? 'queued' as const : backendJob.status,
     startTime,
     endTime,
     duration,
+    currentStep: backendJob.current_step,
+    progressCurrent: backendJob.progress_current,
+    progressTotal: backendJob.progress_total,
     videosProcessed: backendJob.videos_processed || 0,
     videosFound: backendJob.videos_found || 0,
     successCount: backendJob.videos_processed || 0, // Assume all processed are successful for now

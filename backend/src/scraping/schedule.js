@@ -79,7 +79,7 @@ async function processAllJobs() {
     for (const channel of channels) {
         const jobId = createSyncJob({ 
             handle: channel.handle, 
-            platform: channel.platform || 'youtube',
+            platform: channel.platform,
             sinceDays: 7 // Sync last week's content for scheduled jobs
         });
         jobIds.push(jobId);

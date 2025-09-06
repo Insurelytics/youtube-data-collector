@@ -27,7 +27,7 @@ class Topic {
 }
 
 // return a force directed graph of topics along with their engagement multiplier and other metrics
-export function getTopicGraph(regularizationWeight = 10, minimumSampleSize = 1) {
+export function getTopicGraph(regularizationWeight = 10, minimumSampleSize = 1, maxNodes = 10) {
     // 1: Get all videos from the database
     const videos = getAllVideos();
     // 2: Compute engagement score for each video
@@ -49,13 +49,28 @@ export function getTopicGraph(regularizationWeight = 10, minimumSampleSize = 1) 
     const topics = getAllTopics();
     // Get the video_topics into memory (this is stupid isn't it...)
     const videoTopics = getAllVideoTopics();
-    // Create an array of topic objects
-    const topicObjects = topics.map(topic => {
+    // Create an array of topic objects with video counts
+    const allTopicObjects = topics.map(topic => {
         const matchingVideoTopics = videoTopics.filter(videoTopic => videoTopic.topic_id === topic.id);
         const topicVideos = matchingVideoTopics.map(videoTopic => videos.find(video => video.id === videoTopic.video_id));
         const nonNullVideos = topicVideos.filter(v => v !== undefined);
         return new Topic(topic.name, 0, 0, nonNullVideos);
-    }).filter(topic => topic.videos.length >= minimumSampleSize);
+    });
+
+    // Dynamically adjust minimum sample size if too many topics would be included
+    let adjustedMinimumSampleSize = minimumSampleSize;
+    let qualifyingTopics = allTopicObjects.filter(topic => topic.videos.length >= adjustedMinimumSampleSize);
+    
+    // If more topics qualify than maxNodes, increase minimum sample size to limit to ≤maxNodes
+    while (qualifyingTopics.length > maxNodes) {
+        adjustedMinimumSampleSize++;
+        qualifyingTopics = allTopicObjects.filter(topic => topic.videos.length >= adjustedMinimumSampleSize);
+        
+        // Safety check to prevent infinite loop
+        if (adjustedMinimumSampleSize > 100) break;
+    }
+    
+    const topicObjects = qualifyingTopics;
     // 5: Compute topic engagement score by using the scores of the videos that are associated with the topic
     topicObjects.forEach(topic => {
         // how much does this topic affect engagement score? What's the average engagement score for the videos associated with this topic?
@@ -92,16 +107,18 @@ export function getTopicGraph(regularizationWeight = 10, minimumSampleSize = 1) 
             topic.connections.push(new Connection(otherTopic, sharedVideos.length / topic.videos.length));
         });
     }); 
-    // 7: Limit to the top 5 connections for each topic
+    // 7: Filter out 0% connections and limit to the top 5 connections for each topic
     topicObjects.forEach(topic => {
-        topic.connections.sort((a, b) => {
-            // If weights are equal, sort by topic name for deterministic ordering
-            if (b.weight === a.weight) {
-                return a.topic.name.localeCompare(b.topic.name);
-            }
-            return b.weight - a.weight;
-        });
-        topic.connections = topic.connections.slice(0, 5);
+        topic.connections = topic.connections
+            .filter(connection => connection.weight > 0) // Remove 0% connections
+            .sort((a, b) => {
+                // If weights are equal, sort by topic name for deterministic ordering
+                if (b.weight === a.weight) {
+                    return a.topic.name.localeCompare(b.topic.name);
+                }
+                return b.weight - a.weight;
+            })
+            .slice(0, 5);
     });   
     // 8: return the topic objects
     return topicObjects;

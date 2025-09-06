@@ -30,17 +30,20 @@ const AUDIO_DIR = path.join(__dirname, '../../temp/audio');
  * @returns {Object} - Processing results including duration difference
  */
 export async function processVideo(videoUrl, videoId, platform) {
+  let videoPath = null;
+  let audioPath = null;
+  
   try {
     console.log(`Starting video processing for ${videoId} from ${platform}...`);
     
     // Download video
-    const videoPath = await downloadVideo(videoUrl, videoId, platform);
+    videoPath = await downloadVideo(videoUrl, videoId, platform);
     if (!videoPath) {
       throw new Error('Failed to download video');
     }
     
     // Extract original audio
-    const audioPath = await extractAudio(videoPath, videoId, 'original');
+    audioPath = await extractAudio(videoPath, videoId, 'original');
     
     return audioPath;
     
@@ -80,7 +83,8 @@ async function downloadVideo(videoUrl, videoId, platform) {
     
     let command;
     if (platform === 'youtube') {
-      command = `yt-dlp -f "best[height<=720]" -o "${videoPath}" "${videoUrl}"`;
+      // Let yt-dlp choose the best format automatically
+      command = `yt-dlp -o "${videoPath}" "${videoUrl}"`;
     } else if (platform === 'instagram') {
       command = `yt-dlp -f best -o "${videoPath}" "${videoUrl}"`;
     } else {

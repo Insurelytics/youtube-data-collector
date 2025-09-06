@@ -185,10 +185,11 @@ export function getVideosByTopic(topicName, { page = 1, pageSize = 50, source = 
   
   const offset = (page - 1) * pageSize;
   let videosQuery = `
-    SELECT v.*, t.name as topic_name, vt.source as topic_source
+    SELECT v.*, t.name as topic_name, vt.source as topic_source, c.title as channelTitle, c.handle as channelHandle
     FROM videos v
     INNER JOIN video_topics vt ON v.id = vt.video_id
     INNER JOIN topics t ON vt.topic_id = t.id
+    LEFT JOIN channels c ON v.channelId = c.id
     WHERE t.name = ?
   `;
   const videoParams = [normalizedName];

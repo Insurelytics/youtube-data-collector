@@ -18,7 +18,8 @@ const client = Instructor({
 
 const HashtagsSchema = z.object({
   // Description will be used in the prompt
-  hashtags: z.array(z.string()).describe("0-5 new hashtags for the video (not already listed in the video's description)"),
+  hashtags: z.array(z.string()).describe("New hashtags for the video (not already listed in the video's description)"),
+  generalHashtags: z.array(z.string()).describe("A few general hashtags for the video that relate to the regular hashtags. For example, if the video is about a new iPhone, and the hashtags are #iphone #apple #newtech, then the general hashtags might include #tech.  If it is about a specific game like fortnite, then the general hashtags might include simply #gaming"),
   unableToInfer: z.boolean().describe("True if it's impossible to come up with good hashtags.  E.g. if the transcription is just music lyrics, and you can't infer what the video is about using the title and description")
 })
 
@@ -26,11 +27,10 @@ const HashtagsSchema = z.object({
 export async function inferTopicsFromTranscription(transcription, title, description, platform) { 
     const result = await client.chat.completions.create({
         messages: [{ role: "user", content: `
-Please infer 0-5 new hashtags for the video that are not already listed in the video's description.  All data we have on the video is:
+Please infer 10-25 new hashtags for the video that are not already listed in the video's description.  All data we have on the video is:
 Title: ${title}
 Description: ${description}
 Transcription: ${transcription}
-Video is posted on: ${platform}
 If it's impossible to come up with good hashtags, leave hashtags empty and set unableToInfer to true` }],
         model: "gpt-5-nano",
         response_model: { 
@@ -44,5 +44,7 @@ If it's impossible to come up with good hashtags, leave hashtags empty and set u
     }
     // strip '#' from the front if it exists
     result.hashtags = result.hashtags.map(hashtag => hashtag.startsWith('#') ? hashtag.substring(1) : hashtag);
-    return result.hashtags;
+    result.generalHashtags = result.generalHashtags.map(hashtag => hashtag.startsWith('#') ? hashtag.substring(1) : hashtag);
+    const allHashtags = [...result.hashtags, ...result.generalHashtags];
+    return allHashtags;
 }

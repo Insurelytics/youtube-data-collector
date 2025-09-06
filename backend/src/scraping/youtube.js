@@ -1,3 +1,7 @@
+import dotenv from 'dotenv';
+
+dotenv.config();
+
 function ensureFetch() {
   if (typeof fetch !== 'undefined') return fetch;
   // Lazy import if running on older Node
@@ -5,6 +9,7 @@ function ensureFetch() {
 }
 
 const doFetch = ensureFetch();
+const MAX_VIDEOS_PER_SYNC = parseInt(process.env.MAX_VIDEOS_PER_SYNC) || 25;
 
 export async function getChannelByHandle({ apiKey, handle }) {
   const q = encodeURIComponent(handle);
@@ -30,6 +35,8 @@ export async function getChannelByHandle({ apiKey, handle }) {
 export async function listChannelVideoIdsSince({ apiKey, channelId, sinceIso }) {
   let pageToken = '';
   const ids = [];
+  const maxTotalVideos = MAX_VIDEOS_PER_SYNC; // Total limit across all pages
+  
   do {
     const params = new URLSearchParams({
       part: 'id',
@@ -37,7 +44,7 @@ export async function listChannelVideoIdsSince({ apiKey, channelId, sinceIso }) 
       order: 'date',
       publishedAfter: sinceIso,
       type: 'video',
-      maxResults: '50',
+      maxResults: MAX_VIDEOS_PER_SYNC.toString(),
       key: apiKey,
     });
     if (pageToken) params.set('pageToken', pageToken);
@@ -47,10 +54,15 @@ export async function listChannelVideoIdsSince({ apiKey, channelId, sinceIso }) 
     const data = await res.json();
     for (const it of data.items || []) {
       const vid = it.id?.videoId;
-      if (vid) ids.push(vid);
+      if (vid) {
+        ids.push(vid);
+        // Stop if we've reached our total limit
+        if (ids.length >= maxTotalVideos) break;
+      }
     }
     pageToken = data.nextPageToken || '';
-  } while (pageToken);
+    // Stop if we've reached our limit or there's no more pages
+  } while (pageToken && ids.length < maxTotalVideos);
   return ids;
 }
 
@@ -62,7 +74,7 @@ export async function getVideoDetails({ apiKey, videoIds }) {
     const params = new URLSearchParams({
       part: 'snippet,contentDetails,statistics',
       id: chunk.join(','),
-      maxResults: '50',
+      maxResults: MAX_VIDEOS_PER_SYNC.toString(),
       key: apiKey,
     });
     const url = `https://www.googleapis.com/youtube/v3/videos?${params.toString()}`;
@@ -108,6 +120,8 @@ export async function syncChannelVideos({ apiKey, handle, sinceDays }) {
     tags: d.snippet?.tags || null,
     thumbnails: d.snippet?.thumbnails || null,
     raw: d,
+    platform: 'youtube',
+    videoUrl: `https://www.youtube.com/watch?v=${d.id}`, // URL for video downloading
   }));
   return { channelId, channelTitle, subscriberCount, thumbnailUrl, videos };
 }

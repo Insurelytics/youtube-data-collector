@@ -351,8 +351,11 @@ function createServer() {
 
   app.get('/api/topics/graph', (req, res) => {
     try {
+      // Get maxNodes from query parameter, default to 10, max 50
+      const maxNodes = Math.min(Math.max(parseInt(req.query.maxNodes) || 10, 1), 50);
+      
       // Get the topic graph data
-      const topicGraph = getTopicGraph();
+      const topicGraph = getTopicGraph(10, 1, maxNodes);
       
       // Function to categorize topics based on name
       const categorizeTopicByName = (name) => {

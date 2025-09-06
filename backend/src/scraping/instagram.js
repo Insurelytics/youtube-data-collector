@@ -5,6 +5,8 @@ import { downloadChannelThumbnail } from '../video_processing/image-utils.js';
 
 dotenv.config();
 
+const MAX_VIDEOS_PER_SYNC = parseInt(process.env.MAX_VIDEOS_PER_SYNC) || 25;
+
 const engagementLookbackWindow = 1; // days
 
 // Initialize the ApifyClient with API token from .env
@@ -55,9 +57,9 @@ export async function syncChannelReels({ handle, sinceDays }) {
     "isUserReelFeedURL": false,
     "isUserTaggedFeedURL": false,
     "onlyPostsNewerThan": sinceIsoDate,
-    "resultsLimit": 50,
+    "resultsLimit": MAX_VIDEOS_PER_SYNC,
     "resultsType": "stories",
-    "searchLimit": 50
+    "searchLimit": MAX_VIDEOS_PER_SYNC
   };
 
   try {

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Network, Grid3X3, Flame, ChevronDown, Eye, MessageCircle, Heart, LinkIcon, HelpCircle } from "lucide-react"
+import { Network, Grid3X3, Flame, ChevronDown, Eye, MessageCircle, Heart, LinkIcon, HelpCircle, ExternalLink } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import TopicForceGraph from "@/components/TopicForceGraph"
 
 // Enhanced mock data with topic connections and video details
@@ -25,9 +27,9 @@ const initialTopicsData = [
     y: 200,
     description: "AI content is generating 4x more engagement than average",
     topVideos: [
-      { title: "ChatGPT vs Google Bard - Ultimate AI Showdown", views: 2800000, comments: 45000, likes: 180000 },
-      { title: "I Built an AI That Plays Games Better Than Humans", views: 2200000, comments: 38000, likes: 165000 },
-      { title: "The Future of AI in 2024 - What's Coming Next", views: 1900000, comments: 32000, likes: 140000 },
+      { title: "ChatGPT vs Google Bard - Ultimate AI Showdown", views: 2800000, comments: 45000, likes: 180000, videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ", platform: "youtube" },
+      { title: "I Built an AI That Plays Games Better Than Humans", views: 2200000, comments: 38000, likes: 165000, videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ", platform: "youtube" },
+      { title: "The Future of AI in 2024 - What's Coming Next", views: 1900000, comments: 32000, likes: 140000, videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ", platform: "youtube" },
     ],
   },
   {
@@ -194,13 +196,14 @@ export default function HotTopics() {
   const [selectedTopic, setSelectedTopic] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [maxNodes, setMaxNodes] = useState(40)
 
   // Fetch data from API
   useEffect(() => {
     const fetchTopicGraph = async () => {
       try {
         setLoading(true)
-        const response = await fetch('/api/topics/graph')
+        const response = await fetch(`/api/topics/graph?maxNodes=${maxNodes}`)
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`)
         }
@@ -220,7 +223,7 @@ export default function HotTopics() {
     }
 
     fetchTopicGraph()
-  }, [])
+  }, [maxNodes])
 
   const formatNumber = (num: number) => {
     if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
@@ -284,6 +287,45 @@ export default function HotTopics() {
     return "text-red-600"
   }
 
+  const getVideoUrl = (video: any) => {
+    if (video.videoUrl) return video.videoUrl
+    if (video.platform === 'youtube') return `https://www.youtube.com/watch?v=${video.id}`
+    if (video.platform === 'instagram') {
+      const identifier = video.shortCode || video.id
+      return `https://www.instagram.com/p/${identifier}/`
+    }
+    return `https://www.youtube.com/watch?v=${video.id || 'dQw4w9WgXcQ'}`
+  }
+
+  const getImageUrl = (video: any) => {
+    // For Instagram reels, prioritize locally downloaded image to avoid CORS issues
+    if (video.platform === 'instagram' && video.localImageUrl) {
+      // Extract filename from localImageUrl (could be full path or just filename)
+      const filename = video.localImageUrl.includes('/') 
+        ? video.localImageUrl.split('/').pop() 
+        : video.localImageUrl
+      return `/api/images/${filename}`
+    }
+    
+    // For YouTube videos, use thumbnails with the correct structure
+    if (video.thumbnails) {
+      try {
+        const t = typeof video.thumbnails === 'string' ? JSON.parse(video.thumbnails) : video.thumbnails
+        const thumbnailUrl = t?.medium?.url || t?.default?.url || t?.high?.url
+        if (thumbnailUrl) return thumbnailUrl
+      } catch {
+        // If parsing fails, fallback to placeholder
+      }
+    }
+    
+    return '/placeholder-video.jpg'
+  }
+
+  const handleVideoClick = (video: any) => {
+    const videoUrl = getVideoUrl(video)
+    window.open(videoUrl, '_blank', 'noopener,noreferrer')
+  }
+
 
   if (loading) {
     return (
@@ -318,11 +360,32 @@ export default function HotTopics() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold mb-2">Topic Analysis Dashboard</h2>
-        <p className="text-muted-foreground">
-          Interactive visualization and detailed analysis of topic performance and relationships
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold mb-2">Topic Analysis Dashboard</h2>
+          <p className="text-muted-foreground">
+            Interactive visualization and detailed analysis of topic performance and relationships
+          </p>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <Label htmlFor="maxNodes" className="text-sm font-medium">Max Topics:</Label>
+          <Select value={maxNodes.toString()} onValueChange={(value) => setMaxNodes(parseInt(value))}>
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="5">5</SelectItem>
+              <SelectItem value="10">10</SelectItem>
+              <SelectItem value="15">15</SelectItem>
+              <SelectItem value="20">20</SelectItem>
+              <SelectItem value="25">25</SelectItem>
+              <SelectItem value="30">30</SelectItem>
+              <SelectItem value="40">40</SelectItem>
+              <SelectItem value="50">50</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Empty State */}
@@ -607,8 +670,15 @@ export default function HotTopics() {
                             </CollapsibleTrigger>
                             <CollapsibleContent className="space-y-2 mt-2">
                               {topic.topVideos.map((video, index) => (
-                                <div key={index} className="p-2 bg-muted/30 rounded text-xs">
-                                  <div className="font-medium line-clamp-2 mb-1">{video.title}</div>
+                                <div 
+                                  key={index} 
+                                  onClick={() => handleVideoClick(video)}
+                                  className="p-2 bg-muted/30 rounded text-xs cursor-pointer hover:bg-muted/50 transition-colors group"
+                                >
+                                  <div className="flex items-start justify-between mb-1">
+                                    <div className="font-medium line-clamp-2 group-hover:text-blue-600 flex-1 pr-2">{video.title}</div>
+                                    <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-blue-600 flex-shrink-0" />
+                                  </div>
                                   <div className="flex items-center gap-3 text-muted-foreground">
                                     <div className="flex items-center gap-1">
                                       <Eye className="h-2 w-2" />
@@ -731,8 +801,15 @@ export default function HotTopics() {
                         </CollapsibleTrigger>
                         <CollapsibleContent className="space-y-2 mt-2">
                           {topic.topVideos.map((video, index) => (
-                            <div key={index} className="p-2 bg-muted/30 rounded text-xs">
-                              <div className="font-medium line-clamp-2 mb-1">{video.title}</div>
+                            <div 
+                              key={index} 
+                              onClick={() => handleVideoClick(video)}
+                              className="p-2 bg-muted/30 rounded text-xs cursor-pointer hover:bg-muted/50 transition-colors group"
+                            >
+                              <div className="flex items-start justify-between mb-1">
+                                <div className="font-medium line-clamp-2 group-hover:text-blue-600 flex-1 pr-2">{video.title}</div>
+                                <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-blue-600 flex-shrink-0" />
+                              </div>
                               <div className="flex items-center gap-3 text-muted-foreground">
                                 <div className="flex items-center gap-1">
                                   <Eye className="h-2 w-2" />

@@ -1,6 +1,12 @@
 import { downloadImage, getLocalImageUrl } from '../video_processing/image-utils.js';
-import { processVideo } from '../video_processing/video-utils.js';
+import { processVideo, getWordsFromAudio } from '../video_processing/video-utils.js';
 import { upsertVideos, updateEngagementMetrics, getExistingVideoIds, extractAndAssociateHashtags } from '../database/storage.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 /**
  * Initial scraping function - for new videos
@@ -28,24 +34,57 @@ export async function performInitialScraping(videos, platform = 'youtube') {
     }
   }
   
-  // Process videos (download, extract audio, filter silence)
+  // Process videos (download, extract audio, filter silence, and transcribe)
   for (const video of videos) {
     try {
-      if (video.url) {
-        const videoResults = await processVideo(video.url, video.id, platform);
-        video.audioProcessing = {
-          originalDuration: videoResults.originalDuration,
-          filteredDuration: videoResults.filteredDuration,
-          durationDifference: videoResults.durationDifference,
-          silencePercentage: videoResults.silencePercentage,
-          originalAudioPath: videoResults.originalAudioPath,
-          filteredAudioPath: videoResults.filteredAudioPath
-        };
+      if (video.videoUrl) {
+        console.log(`Processing video ${video.id} for audio and transcription...`);
+        const audioPath = await processVideo(video.videoUrl, video.id, platform);
+        
+        // Transcribe the filtered audio (usually better quality)
+        let transcription = null;
+        try {
+          transcription = await getWordsFromAudio(audioPath);
+          console.log(`Transcription completed for ${video.id}`);
+        } catch (transcriptionError) {
+          console.error(`Failed to transcribe video ${video.id}:`, transcriptionError.message);
+        }
+        
+        video.transcription = transcription;        
+        // Clean up audio files after transcription
+        try {
+          if (fs.existsSync(audioPath)) {
+            fs.unlinkSync(audioPath);
+            console.log(`Cleaned up original audio: ${audioPath}`);
+          }
+        } catch (cleanupError) {
+          console.error(`Failed to clean up audio files for ${video.id}:`, cleanupError.message);
+        }
+        
         videosProcessed++;
       }
     } catch (error) {
       console.error(`Failed to process video ${video.id}:`, error);
       video.audioProcessing = { error: error.message };
+      video.transcription = null;
+      
+      // Still try to clean up any audio files that might have been created
+      try {
+        const audioDir = path.join(__dirname, '../../temp/audio');
+        const originalAudioPath = path.join(audioDir, `${video.id}_original.wav`);
+        const filteredAudioPath = path.join(audioDir, `${video.id}_filtered.wav`);
+        
+        if (fs.existsSync(originalAudioPath)) {
+          fs.unlinkSync(originalAudioPath);
+          console.log(`Cleaned up original audio after error: ${originalAudioPath}`);
+        }
+        if (fs.existsSync(filteredAudioPath)) {
+          fs.unlinkSync(filteredAudioPath);
+          console.log(`Cleaned up filtered audio after error: ${filteredAudioPath}`);
+        }
+      } catch (cleanupError) {
+        console.error(`Failed to clean up audio files after error for ${video.id}:`, cleanupError.message);
+      }
     }
   }
   

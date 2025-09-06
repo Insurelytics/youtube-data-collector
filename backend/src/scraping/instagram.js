@@ -54,9 +54,9 @@ export async function syncChannelReels({ handle, sinceDays }) {
     "isUserReelFeedURL": false,
     "isUserTaggedFeedURL": false,
     "onlyPostsNewerThan": sinceIsoDate,
-    "resultsLimit": 100,
+    "resultsLimit": 5,
     "resultsType": "stories",
-    "searchLimit": 100
+    "searchLimit": 5
   };
 
   try {

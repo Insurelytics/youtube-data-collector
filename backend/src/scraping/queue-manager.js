@@ -58,19 +58,17 @@ class QueueManager {
                 throw new Error('Missing API_KEY environment variable for YouTube sync');
             }
 
-            // Process the sync job
-            let result;
-            const sinceDays = job.since_days || MAX_SYNC_DAYS;
-            
+            // STEP 1: Get channel info first and store it immediately
+            let channelInfo;
             if (job.platform === 'instagram') {
-                result = await syncInstagramReels({ handle: job.handle, sinceDays });
+                const { getChannelByHandle } = await import('./instagram.js');
+                channelInfo = await getChannelByHandle({ handle: job.handle });
             } else {
-                // Default to YouTube
-                result = await syncYouTubeVideos({ apiKey, handle: job.handle, sinceDays });
+                const { getChannelByHandle } = await import('./youtube.js');
+                channelInfo = await getChannelByHandle({ apiKey, handle: job.handle });
             }
 
-            const { channelId, channelTitle, subscriberCount, thumbnailUrl, videos, reels, profileData } = result;
-            const content = videos || reels || [];
+            const { channelId, channelTitle, subscriberCount, thumbnailUrl, profileData } = channelInfo;
             
             const channelData = { 
                 id: channelId, 
@@ -79,7 +77,8 @@ class QueueManager {
                 subscriberCount, 
                 isActive: 1, 
                 thumbnailUrl, 
-                platform: job.platform 
+                platform: job.platform,
+                initial_scrape_running: 1
             };
             
             // Add Instagram profile data if available
@@ -92,14 +91,32 @@ class QueueManager {
                 channelData.externalUrls = profileData.externalUrls ? JSON.stringify(profileData.externalUrls) : null;
             }
             
-            // Store channel data
+            // Store channel data immediately so it shows up in frontend
             upsertChannel(channelData);
+            console.log(`Channel ${channelTitle} stored in database, will now begin content scraping...`);
+
+            // STEP 2: Now perform the content scraping
+            let result;
+            const sinceDays = job.since_days || MAX_SYNC_DAYS;
+            
+            if (job.platform === 'instagram') {
+                result = await syncInstagramReels({ handle: job.handle, sinceDays });
+            } else {
+                // Default to YouTube
+                result = await syncYouTubeVideos({ apiKey, handle: job.handle, sinceDays });
+            }
+
+            const { videos, reels } = result;
+            const content = videos || reels || [];
             
             // Use smart scraping to handle new vs existing videos appropriately
             const scrapingResults = await performSmartScraping(content, job.platform);
             const { newVideos, updatedVideos } = scrapingResults;
 
             console.log(`Job ${job.id} completed successfully. Synced ${content.length} items for ${channelTitle}`);
+            
+            // Mark initial scrape as completed
+            upsertChannel({ id: channelId, title: channelTitle, handle: job.handle, initial_scrape_running: 0 });
             
             updateSyncJob(job.id, { 
                 status: 'completed',

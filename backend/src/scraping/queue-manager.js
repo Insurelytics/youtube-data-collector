@@ -1,7 +1,6 @@
-import { updateSyncJob, getNextPendingJob } from '../database/storage.js';
+import { updateSyncJob, getNextPendingJob, upsertChannel } from '../database/index.js';
 import { syncChannelVideos as syncYouTubeVideos } from './youtube.js';
 import { syncChannelReels as syncInstagramReels } from './instagram.js';
-import { upsertChannel } from '../database/storage.js';
 import { performSmartScraping } from './scraping-orchestrator.js';
 
 const MAX_SYNC_DAYS = 36500; // ~100 years

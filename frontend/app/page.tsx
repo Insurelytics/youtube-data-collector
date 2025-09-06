@@ -19,6 +19,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useToast } from "@/hooks/use-toast"
 import { JobsMonitor } from "@/components/jobs/JobsMonitor"
 import HotTopics from "@/components/HotTopics"
+import { useJobs } from "@/hooks/useJobs"
 
 type UiChannel = {
   id: string
@@ -134,6 +135,12 @@ type LoadingState = {
 export default function HomePage() {
   const [channels, setChannels] = useState<UiChannel[]>([])
   const [newChannelUrl, setNewChannelUrl] = useState("")
+  
+  // Get jobs data with 1-second polling for real-time updates
+  const { runningJobs } = useJobs(1000)
+  
+  // Calculate active jobs count (running + queued/pending)
+  const activeJobsCount = runningJobs.filter(job => job.status === 'running' || job.status === 'queued').length
   const [selectedPlatform, setSelectedPlatform] = useState<"instagram" | "youtube">("instagram")
   const [loadingState, setLoadingState] = useState<LoadingState>({ type: null })
   const [criteria, setCriteria] = useState(getGlobalCriteria())
@@ -281,7 +288,7 @@ export default function HomePage() {
       if (foundChannel) {
         toast({
           title: "Channel added successfully!",
-          description: `${foundChannel.name} has been added and is now visible.`
+          description: `${foundChannel.name} has been added.`
         })
       } else {
         toast({
@@ -457,9 +464,9 @@ export default function HomePage() {
               <Clock className="h-4 w-4 mr-2" />
               Schedule
             </TabsTrigger>
-            <TabsTrigger value="jobs">
+            <TabsTrigger value="jobs" className={activeJobsCount > 0 ? "blue-shimmer" : ""}>
               <Play className="h-4 w-4 mr-2" />
-              Jobs
+              Jobs{activeJobsCount > 0 ? ` (${activeJobsCount})` : ""}
             </TabsTrigger>
           </TabsList>
 

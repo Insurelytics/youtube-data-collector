@@ -3,7 +3,7 @@
 // All scheduling operations use UTC time for consistency across timezones
 
 import cron from 'node-cron';
-import { listChannels, createSyncJob, getJobStatus, getSetting, setSetting, getNewVideosSince, identifyViralVideos } from '../database/storage.js';
+import { listChannels, createSyncJob, getJobStatus, getSetting, setSetting, getNewVideosSince, identifyViralVideos } from '../database/index.js';
 import { sendViralVideosEmail } from '../email/email.js';
 
 function getScheduledHour() {

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { 
-  ensureDatabase, 
+  initializeDatabase, 
   queryVideos, 
   upsertChannel, 
   listChannels, 
@@ -26,7 +26,7 @@ import {
   getTopicStats, 
   getVideosByTopic, 
   cleanupOrphanedRunningJobs
-} from './database/storage.js';
+} from './database/index.js';
 import { getTopicRanking, getTopicGraph } from './topics/topic-math.js';
 
 import { getChannelByHandle as getYouTubeChannelByHandle } from './scraping/youtube.js';
@@ -39,7 +39,7 @@ const __dirname = path.dirname(__filename);
 
 
 const PORT = process.env.PORT || 4000;
-const IMAGES_DIR = path.join(__dirname, '../../images');
+const IMAGES_DIR = path.join(__dirname, '../images');
 const DEFAULT_DAYS = 36500; // forever
 // Use a very large window for syncing so we fetch as much history as possible
 const MAX_SYNC_DAYS = 36500; // ~100 years
@@ -51,7 +51,7 @@ if (!fs.existsSync(IMAGES_DIR)) {
 
 
 function createServer() {
-  ensureDatabase();
+  initializeDatabase();
 
   // Clean up any jobs that were left in 'running' state from previous server sessions
   cleanupOrphanedRunningJobs();

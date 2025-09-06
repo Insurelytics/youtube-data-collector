@@ -1,6 +1,6 @@
 import { downloadImage, getLocalImageUrl } from '../video_processing/image-utils.js';
 import { processVideo, getWordsFromAudio } from '../video_processing/video-utils.js';
-import { upsertVideos, updateEngagementMetrics, getExistingVideoIds, extractAndAssociateHashtags } from '../database/storage.js';
+import { upsertVideos, updateEngagementMetrics, getExistingVideoIds, extractAndAssociateHashtags } from '../database/index.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

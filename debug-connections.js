@@ -1,4 +1,4 @@
-import { getTopicGraph } from './src/topic-math.js';
+import { getTopicGraph } from './src/topics/topic-math.js';
 
 // Debug the topic connections
 console.log('Starting debug of topic connections...');

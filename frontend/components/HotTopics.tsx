@@ -325,7 +325,21 @@ export default function HotTopics() {
         </p>
       </div>
 
-      <Tabs defaultValue="visual-cards" className="space-y-6">
+      {/* Empty State */}
+      {topics.length === 0 && !loading && (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <Flame className="h-12 w-12 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold mb-2">No Topic Analytics Available</h3>
+            <p className="text-muted-foreground text-center">
+              There are not enough videos in the database to display topic analytics. Add more channels and let them sync to see trending topics.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {topics.length > 0 && (
+        <Tabs defaultValue="visual-cards" className="space-y-6">
         <TabsList className="grid w-full grid-cols-2">
           
           <TabsTrigger value="visual-cards" className="flex items-center gap-2">
@@ -773,6 +787,7 @@ export default function HotTopics() {
           </div>
         </TabsContent>
       </Tabs>
+      )}
     </div>
   )
 }

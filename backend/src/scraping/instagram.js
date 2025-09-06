@@ -1,6 +1,6 @@
 import { ApifyClient } from 'apify-client';
 import dotenv from 'dotenv';
-import { getLastPublishedDate } from '../database/storage.js';
+import { getLastPublishedDate } from '../database/index.js';
 
 dotenv.config();
 

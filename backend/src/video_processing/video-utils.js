@@ -2,12 +2,18 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import { execSync } from 'node:child_process';
+import OpenAI from "openai";
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const openai = new OpenAI();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const VIDEOS_DIR = path.join(__dirname, '../videos');
-const AUDIO_DIR = path.join(__dirname, '../audio');
+const VIDEOS_DIR = path.join(__dirname, '../../temp/videos');
+const AUDIO_DIR = path.join(__dirname, '../../temp/audio');
 
 // Ensure directories exist
 [VIDEOS_DIR, AUDIO_DIR].forEach(dir => {
@@ -34,39 +40,35 @@ export async function processVideo(videoUrl, videoId, platform = 'youtube') {
     }
     
     // Extract original audio
-    const originalAudioPath = await extractAudio(videoPath, videoId, 'original');
+    const audioPath = await extractAudio(videoPath, videoId, 'original');
     
-    // Filter out silent parts
-    const filteredAudioPath = await filterSilence(originalAudioPath, videoId);
-    
-    // Get durations
-    const originalDuration = await getAudioDuration(originalAudioPath);
-    const filteredDuration = await getAudioDuration(filteredAudioPath);
-    const durationDifference = originalDuration - filteredDuration;
-    
-    // Clean up video file
-    fs.unlinkSync(videoPath);
-    
-    console.log(`Video processing completed for ${videoId}:`, {
-      originalDuration: `${originalDuration}s`,
-      filteredDuration: `${filteredDuration}s`,
-      durationDifference: `${durationDifference}s`,
-      silencePercentage: `${((durationDifference / originalDuration) * 100).toFixed(1)}%`
-    });
-    
-    return {
-      originalAudioPath,
-      filteredAudioPath,
-      originalDuration,
-      filteredDuration,
-      durationDifference,
-      silencePercentage: (durationDifference / originalDuration) * 100
-    };
+    return audioPath;
     
   } catch (error) {
     console.error(`Error processing video ${videoId}:`, error);
+    if (videoPath) {
+      fs.unlinkSync(videoPath);
+    }
+    if (audioPath) {
+      fs.unlinkSync(audioPath);
+    }
     throw error;
   }
+}
+
+export async function getWordsFromAudio(audioPath) {
+    try {
+      const transcription = await openai.audio.transcriptions.create({
+        file: fs.createReadStream(audioPath),
+        model: "gpt-4o-mini-transcribe",
+      });
+
+      console.log(transcription.text);
+      return transcription.text;
+    } catch (error) {
+      console.error(`Error getting words from audio ${audioPath}:`, error);
+      throw error;
+    }
 }
 
 /**

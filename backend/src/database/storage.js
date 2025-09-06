@@ -109,6 +109,8 @@ export function upsertChannel(channel) {
   try { db.exec('ALTER TABLE channels ADD COLUMN verified INTEGER DEFAULT 0'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN businessCategoryName TEXT'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN externalUrls TEXT'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN initial_scrape_running INTEGER DEFAULT 0'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN initial_scrape_running INTEGER DEFAULT 0'); } catch {}
   
   // Migrate videos table for Instagram support
   try { db.exec('ALTER TABLE videos ADD COLUMN platform TEXT DEFAULT "youtube"'); } catch {}
@@ -119,6 +121,7 @@ export function upsertChannel(channel) {
   try { db.exec('ALTER TABLE videos ADD COLUMN mentions TEXT'); } catch {}
   try { db.exec('ALTER TABLE videos ADD COLUMN takenAtTimestamp INTEGER'); } catch {}
   try { db.exec('ALTER TABLE videos ADD COLUMN localImageUrl TEXT'); } catch {}
+  try { db.exec('ALTER TABLE videos ADD COLUMN transcription TEXT'); } catch {}
 
   const stmt = db.prepare(`
     INSERT INTO channels (id, title, handle, subscriberCount, isActive, thumbnailUrl, platform, biography, postsCount, followsCount, verified, businessCategoryName, externalUrls)
@@ -160,11 +163,11 @@ export function upsertVideos(videos) {
     INSERT INTO videos (
       id, channelId, title, description, publishedAt, durationSeconds,
       viewCount, likeCount, commentCount, tags, thumbnails, raw, lastSyncedAt,
-      platform, shortCode, displayUrl, localImageUrl, videoUrl, dimensions, mentions, takenAtTimestamp
+      platform, shortCode, displayUrl, localImageUrl, videoUrl, dimensions, mentions, takenAtTimestamp, transcription
     ) VALUES (
       @id, @channelId, @title, @description, @publishedAt, @durationSeconds,
       @viewCount, @likeCount, @commentCount, @tags, @thumbnails, @raw, @lastSyncedAt,
-      @platform, @shortCode, @displayUrl, @localImageUrl, @videoUrl, @dimensions, @mentions, @takenAtTimestamp
+      @platform, @shortCode, @displayUrl, @localImageUrl, @videoUrl, @dimensions, @mentions, @takenAtTimestamp, @transcription
     )
     ON CONFLICT(id) DO UPDATE SET
       title=excluded.title,
@@ -185,7 +188,8 @@ export function upsertVideos(videos) {
       videoUrl=excluded.videoUrl,
       dimensions=excluded.dimensions,
       mentions=excluded.mentions,
-      takenAtTimestamp=excluded.takenAtTimestamp
+      takenAtTimestamp=excluded.takenAtTimestamp,
+      transcription=excluded.transcription
   `);
 
   const toRow = (v) => ({
@@ -210,6 +214,7 @@ export function upsertVideos(videos) {
     dimensions: v.dimensions ? JSON.stringify(v.dimensions) : null,
     mentions: v.mentions ? JSON.stringify(v.mentions) : null,
     takenAtTimestamp: v.takenAtTimestamp || null,
+    transcription: v.transcription || null,
   });
 
   const tx = db.transaction((all) => {
@@ -245,7 +250,7 @@ export function queryVideos({ search, sort, order, page, pageSize }) {
   const rows = db.prepare(`
     SELECT id, channelId, title, description, publishedAt, durationSeconds,
            viewCount, likeCount, commentCount, thumbnails,
-           platform, shortCode, displayUrl, localImageUrl,
+           platform, shortCode, displayUrl, localImageUrl, transcription,
            ${sortEngagementExpr} AS engagement
     FROM videos
     ${whereSql}
@@ -269,6 +274,7 @@ export function listChannels() {
   try { db.exec('ALTER TABLE channels ADD COLUMN verified INTEGER DEFAULT 0'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN businessCategoryName TEXT'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN externalUrls TEXT'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN initial_scrape_running INTEGER DEFAULT 0'); } catch {}
   // Default existing channels to YouTube
   try { db.exec('UPDATE channels SET platform = "youtube" WHERE platform IS NULL'); } catch {}
 
@@ -309,6 +315,7 @@ export function getChannel(id) {
   try { db.exec('ALTER TABLE channels ADD COLUMN verified INTEGER DEFAULT 0'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN businessCategoryName TEXT'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN externalUrls TEXT'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN initial_scrape_running INTEGER DEFAULT 0'); } catch {}
   // Default existing channels to YouTube
   try { db.exec('UPDATE channels SET platform = "youtube" WHERE platform IS NULL'); } catch {}
 

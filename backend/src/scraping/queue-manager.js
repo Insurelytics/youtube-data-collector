@@ -121,7 +121,7 @@ class QueueManager {
             const scrapingResults = await performSmartScraping(content, job.platform, (step, current, total) => {
                 this.updateJobProgress(job.id, step, current, total);
             });
-            const { newVideos, updatedVideos } = scrapingResults;
+            const { newVideos, updatedVideos, topicsInferred } = scrapingResults;
 
             console.log(`Job ${job.id} completed successfully. Synced ${content.length} items for ${channelTitle}`);
             

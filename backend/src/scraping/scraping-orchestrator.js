@@ -1,6 +1,7 @@
 import { downloadImage, getLocalImageUrl } from '../video_processing/image-utils.js';
 import { processVideo, getWordsFromAudio } from '../video_processing/video-utils.js';
-import { upsertVideos, updateEngagementMetrics, getExistingVideoIds, extractAndAssociateHashtags } from '../database/index.js';
+import { upsertVideos, updateEngagementMetrics, getExistingVideoIds, extractAndAssociateHashtags, associateAITopicsWithVideo } from '../database/index.js';
+import { inferTopicsFromTranscription } from '../topics/inferTopics.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -98,16 +99,63 @@ export async function performInitialScraping(videos, platform, progressCallback 
     }
   }
   
+  // Infer topics for videos with transcriptions
+  const videosWithTranscriptions = videos.filter(v => v.transcription);
+  if (videosWithTranscriptions.length > 0) {
+    for (let i = 0; i < videosWithTranscriptions.length; i++) {
+      const video = videosWithTranscriptions[i];
+      try {
+        if (progressCallback) {
+          progressCallback('Inferring video topics', i + 1, videosWithTranscriptions.length);
+        }
+        
+        console.log(`Inferring topics for video ${video.id}...`);
+        const inferredHashtags = await inferTopicsFromTranscription(
+          video.transcription, 
+          video.title || '', 
+          video.description || '', 
+          platform
+        );
+        
+        if (inferredHashtags && inferredHashtags.length > 0) {
+          console.log(`Inferred ${inferredHashtags.length} topics for ${video.id}:`, inferredHashtags);
+        } else {
+          console.log(`No topics could be inferred for video ${video.id}`);
+        }
+        
+        video.inferredTopics = inferredHashtags;
+      } catch (error) {
+        console.error(`Failed to infer topics for video ${video.id}:`, error.message);
+        video.inferredTopics = [];
+      }
+    }
+  }
+  
   // Store all video data (includes engagement metrics)
   upsertVideos(videos);
   
-  console.log(`Initial scraping completed: ${videos.length} new videos processed, ${processedCount} images downloaded, ${videosProcessed} videos processed`);
+  // Associate inferred topics after videos are stored
+  for (const video of videos) {
+    if (video.inferredTopics && video.inferredTopics.length > 0) {
+      try {
+        associateAITopicsWithVideo(video.id, video.inferredTopics);
+        console.log(`Associated ${video.inferredTopics.length} AI-generated topics with video ${video.id}`);
+      } catch (error) {
+        console.error(`Failed to associate AI topics for video ${video.id}:`, error.message);
+      }
+    }
+  }
+  
+  const topicsInferred = videos.filter(v => v.inferredTopics && v.inferredTopics.length > 0).length;
+  
+  console.log(`Initial scraping completed: ${videos.length} new videos processed, ${processedCount} images downloaded, ${videosProcessed} videos processed, ${topicsInferred} videos with inferred topics`);
   
   return {
     newVideos: videos.length,
     processedVideos: videos.length,
     imagesDownloaded: processedCount,
-    videosProcessed
+    videosProcessed,
+    topicsInferred
   };
 }
 
@@ -176,7 +224,8 @@ export async function performSmartScraping(allVideos, platform, progressCallback
     updatedVideos: rescrapingResults.updatedVideos,
     processedVideos: allVideos.length,
     imagesDownloaded: initialResults.imagesDownloaded || 0,
-    videosProcessed: initialResults.videosProcessed || 0
+    videosProcessed: initialResults.videosProcessed || 0,
+    topicsInferred: initialResults.topicsInferred || 0
   };
   
   console.log(`Smart scraping completed:`, totalResults);

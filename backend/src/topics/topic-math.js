@@ -27,7 +27,7 @@ class Topic {
 }
 
 // return a force directed graph of topics along with their engagement multiplier and other metrics
-export function getTopicGraph(regularizationWeight = 10, minimumSampleSize = 5) {
+export function getTopicGraph(regularizationWeight = 10, minimumSampleSize = 1) {
     // 1: Get all videos from the database
     const videos = getAllVideos();
     // 2: Compute engagement score for each video

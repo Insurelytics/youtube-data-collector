@@ -1,6 +1,7 @@
 import { ApifyClient } from 'apify-client';
 import dotenv from 'dotenv';
 import { getLastPublishedDate } from '../database/index.js';
+import { downloadChannelThumbnail } from '../video_processing/image-utils.js';
 
 dotenv.config();
 
@@ -54,9 +55,9 @@ export async function syncChannelReels({ handle, sinceDays }) {
     "isUserReelFeedURL": false,
     "isUserTaggedFeedURL": false,
     "onlyPostsNewerThan": sinceIsoDate,
-    "resultsLimit": 5,
+    "resultsLimit": 50,
     "resultsType": "stories",
-    "searchLimit": 5
+    "searchLimit": 50
   };
 
   try {
@@ -73,7 +74,20 @@ export async function syncChannelReels({ handle, sinceDays }) {
     const channelId = `ig_${handle}`;
     const channelTitle = items.length > 0 ? (items[0].ownerFullName || items[0].ownerUsername || handle) : handle;
     const subscriberCount = null; // Instagram doesn't expose follower counts publicly
-    const thumbnailUrl = null; // Would need separate API call to get profile picture
+    
+    // Try to get and download profile picture if available from posts
+    let thumbnailUrl = null;
+    const firstItem = items[0];
+    const ownerProfilePicUrl = firstItem?.ownerProfilePicUrl || firstItem?.profilePicUrl || null;
+    
+    if (ownerProfilePicUrl) {
+      console.log(`Downloading channel thumbnail for ${handle} from post data...`);
+      const localThumbnailUrl = await downloadChannelThumbnail(ownerProfilePicUrl, channelId);
+      thumbnailUrl = localThumbnailUrl || ownerProfilePicUrl;
+      if (localThumbnailUrl) {
+        console.log(`Successfully downloaded channel thumbnail for ${handle}`);
+      }
+    }
 
     // Convert Instagram posts to our video format - items are already the posts
     const reels = items.map(item => ({
@@ -161,13 +175,25 @@ export async function getChannelByHandle({ handle }) {
     }
 
     const profile = items[0];
+    const channelId = `ig_${handle}`;
+    const originalThumbnailUrl = profile.profilePicUrlHD || profile.profilePicUrl || null;
+
+    // Download channel thumbnail if available
+    let localThumbnailUrl = null;
+    if (originalThumbnailUrl) {
+      console.log(`Downloading channel thumbnail for ${handle}...`);
+      localThumbnailUrl = await downloadChannelThumbnail(originalThumbnailUrl, channelId);
+      if (localThumbnailUrl) {
+        console.log(`Successfully downloaded channel thumbnail for ${handle}`);
+      }
+    }
 
     // Return profile data mapped to our channel format
     return {
-      channelId: `ig_${handle}`,
+      channelId,
       channelTitle: profile.fullName || profile.username || handle,
       subscriberCount: profile.followersCount || null,
-      thumbnailUrl: profile.profilePicUrlHD || profile.profilePicUrl || null,
+      thumbnailUrl: localThumbnailUrl || originalThumbnailUrl,
       handle: profile.username || handle,
       biography: profile.biography || null,
       postsCount: profile.postsCount || null,

@@ -29,7 +29,7 @@ const AUDIO_DIR = path.join(__dirname, '../../temp/audio');
  * @param {string} platform - Platform (youtube/instagram)
  * @returns {Object} - Processing results including duration difference
  */
-export async function processVideo(videoUrl, videoId, platform = 'youtube') {
+export async function processVideo(videoUrl, videoId, platform) {
   try {
     console.log(`Starting video processing for ${videoId} from ${platform}...`);
     

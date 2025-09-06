@@ -218,6 +218,17 @@ export default function ChannelDashboard() {
           
           <Card>
             <CardContent className="pt-6">
+              {channel.initial_scrape_running && (
+                <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
+                    <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                    <span className="font-medium">Initial scrape running...</span>
+                  </div>
+                  <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
+                    This may take up to 15 minutes. Videos will appear as they are processed.
+                  </p>
+                </div>
+              )}
               <div className="flex items-start gap-6">
                 <Avatar className="h-20 w-20">
                   <AvatarImage src={channel.thumbnailUrl || "/placeholder.svg"} alt={channel.title} />

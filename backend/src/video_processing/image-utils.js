@@ -5,7 +5,7 @@ import fs from 'node:fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const IMAGES_DIR = path.join(__dirname, '../images');
+const IMAGES_DIR = path.join(__dirname, '../../images');
 
 // Ensure images directory exists
 if (!fs.existsSync(IMAGES_DIR)) {

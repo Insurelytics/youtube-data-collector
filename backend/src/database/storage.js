@@ -35,7 +35,7 @@ export function ensureDatabase() {
       thumbnails TEXT,
       raw TEXT,
       lastSyncedAt TEXT,
-      platform TEXT DEFAULT 'youtube',
+      platform TEXT NOT NULL,
       shortCode TEXT,
       displayUrl TEXT,
       localImageUrl TEXT,
@@ -49,7 +49,7 @@ export function ensureDatabase() {
     CREATE TABLE IF NOT EXISTS sync_jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       handle TEXT NOT NULL,
-      platform TEXT NOT NULL DEFAULT 'youtube',
+      platform TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending',
       created_at TEXT NOT NULL,
       started_at TEXT,
@@ -101,7 +101,7 @@ export function upsertChannel(channel) {
   try { db.exec('ALTER TABLE channels ADD COLUMN subscriberCount INTEGER'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN isActive INTEGER DEFAULT 1'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN thumbnailUrl TEXT'); } catch {}
-  try { db.exec('ALTER TABLE channels ADD COLUMN platform TEXT DEFAULT "youtube"'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN platform TEXT'); } catch {}
   // Instagram profile fields
   try { db.exec('ALTER TABLE channels ADD COLUMN biography TEXT'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN postsCount INTEGER'); } catch {}
@@ -113,7 +113,7 @@ export function upsertChannel(channel) {
   try { db.exec('ALTER TABLE channels ADD COLUMN initial_scrape_running INTEGER DEFAULT 0'); } catch {}
   
   // Migrate videos table for Instagram support
-  try { db.exec('ALTER TABLE videos ADD COLUMN platform TEXT DEFAULT "youtube"'); } catch {}
+  try { db.exec('ALTER TABLE videos ADD COLUMN platform TEXT'); } catch {}
   try { db.exec('ALTER TABLE videos ADD COLUMN shortCode TEXT'); } catch {}
   try { db.exec('ALTER TABLE videos ADD COLUMN displayUrl TEXT'); } catch {}
   try { db.exec('ALTER TABLE videos ADD COLUMN videoUrl TEXT'); } catch {}
@@ -125,7 +125,7 @@ export function upsertChannel(channel) {
 
   const stmt = db.prepare(`
     INSERT INTO channels (id, title, handle, subscriberCount, isActive, thumbnailUrl, platform, biography, postsCount, followsCount, verified, businessCategoryName, externalUrls)
-    VALUES (@id, @title, @handle, @subscriberCount, COALESCE(@isActive, 1), @thumbnailUrl, COALESCE(@platform, 'youtube'), @biography, @postsCount, @followsCount, COALESCE(@verified, 0), @businessCategoryName, @externalUrls)
+    VALUES (@id, @title, @handle, @subscriberCount, COALESCE(@isActive, 1), @thumbnailUrl, @platform, @biography, @postsCount, @followsCount, COALESCE(@verified, 0), @businessCategoryName, @externalUrls)
     ON CONFLICT(id) DO UPDATE SET
       title=excluded.title,
       handle=excluded.handle,
@@ -144,7 +144,6 @@ export function upsertChannel(channel) {
     subscriberCount: null, 
     isActive: 1, 
     thumbnailUrl: null, 
-    platform: 'youtube', 
     biography: null,
     postsCount: null,
     followsCount: null,
@@ -206,7 +205,7 @@ export function upsertVideos(videos) {
     thumbnails: v.thumbnails ? JSON.stringify(v.thumbnails) : null,
     raw: v.raw ? JSON.stringify(v.raw) : null,
     lastSyncedAt: nowIso,
-    platform: v.platform || 'youtube',
+    platform: v.platform,
     shortCode: v.shortCode || null,
     displayUrl: v.displayUrl || null,
     localImageUrl: v.localImageUrl || null,
@@ -266,7 +265,7 @@ export function listChannels() {
   try { db.exec('ALTER TABLE channels ADD COLUMN subscriberCount INTEGER'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN isActive INTEGER DEFAULT 1'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN thumbnailUrl TEXT'); } catch {}
-  try { db.exec('ALTER TABLE channels ADD COLUMN platform TEXT DEFAULT "youtube"'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN platform TEXT'); } catch {}
   // Instagram profile fields
   try { db.exec('ALTER TABLE channels ADD COLUMN biography TEXT'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN postsCount INTEGER'); } catch {}
@@ -275,14 +274,12 @@ export function listChannels() {
   try { db.exec('ALTER TABLE channels ADD COLUMN businessCategoryName TEXT'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN externalUrls TEXT'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN initial_scrape_running INTEGER DEFAULT 0'); } catch {}
-  // Default existing channels to YouTube
-  try { db.exec('UPDATE channels SET platform = "youtube" WHERE platform IS NULL'); } catch {}
 
   const rows = db.prepare(`
     SELECT c.id, c.title, c.handle, COALESCE(c.subscriberCount, 0) AS subscriberCount,
            COALESCE(c.isActive, 1) AS isActive,
            c.thumbnailUrl AS thumbnailUrl,
-           COALESCE(c.platform, 'youtube') AS platform,
+           c.platform,
            c.biography, c.postsCount, c.followsCount, 
            COALESCE(c.verified, 0) AS verified,
            c.businessCategoryName, c.externalUrls,
@@ -307,7 +304,7 @@ export function getChannel(id) {
   try { db.exec('ALTER TABLE channels ADD COLUMN subscriberCount INTEGER'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN isActive INTEGER DEFAULT 1'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN thumbnailUrl TEXT'); } catch {}
-  try { db.exec('ALTER TABLE channels ADD COLUMN platform TEXT DEFAULT "youtube"'); } catch {}
+  try { db.exec('ALTER TABLE channels ADD COLUMN platform TEXT'); } catch {}
   // Instagram profile fields
   try { db.exec('ALTER TABLE channels ADD COLUMN biography TEXT'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN postsCount INTEGER'); } catch {}
@@ -316,15 +313,13 @@ export function getChannel(id) {
   try { db.exec('ALTER TABLE channels ADD COLUMN businessCategoryName TEXT'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN externalUrls TEXT'); } catch {}
   try { db.exec('ALTER TABLE channels ADD COLUMN initial_scrape_running INTEGER DEFAULT 0'); } catch {}
-  // Default existing channels to YouTube
-  try { db.exec('UPDATE channels SET platform = "youtube" WHERE platform IS NULL'); } catch {}
 
   return db.prepare(`
     SELECT c.id, c.title, c.handle,
            COALESCE(c.subscriberCount,0) AS subscriberCount,
            COALESCE(c.isActive,1) AS isActive,
            c.thumbnailUrl AS thumbnailUrl,
-           COALESCE(c.platform, 'youtube') AS platform,
+           c.platform,
            c.biography, c.postsCount, c.followsCount, 
            COALESCE(c.verified, 0) AS verified,
            c.businessCategoryName, c.externalUrls,
@@ -456,7 +451,7 @@ export function queryVideosAdvanced({ sinceIso, channelId, sort, order, page, pa
 }
 
 // Job management functions
-export function createSyncJob({ handle, platform = 'youtube', sinceDays = null }) {
+export function createSyncJob({ handle, platform, sinceDays = null }) {
   ensureDatabase();
   const stmt = db.prepare(`
     INSERT INTO sync_jobs (handle, platform, status, created_at, since_days)

@@ -39,7 +39,7 @@ function formatVideoSummary(video) {
   const viewCount = video.viewCount ? video.viewCount.toLocaleString() : 'N/A';
   const likeCount = video.likeCount ? video.likeCount.toLocaleString() : 'N/A';
   const commentCount = video.commentCount ? video.commentCount.toLocaleString() : 'N/A';
-  const platform = video.platform || 'youtube';
+  const platform = video.platform;
   
   // Generate appropriate URL based on platform
   let contentUrl;
@@ -104,7 +104,7 @@ async function sendViralVideosEmail(viralVideos, totalNewVideos, jobResults) {
 
   // Count content by platform
   const platformCounts = viralVideos.reduce((acc, video) => {
-    const platform = video.platform || 'youtube';
+    const platform = video.platform;
     acc[platform] = (acc[platform] || 0) + 1;
     return acc;
   }, {});
@@ -125,7 +125,7 @@ ${viralVideos.map(formatVideoSummary).join('\n\n')}` : 'No viral content found t
 
 Sync Job Summary:
 ${jobResults.map(job => {
-  const platform = job.platform || 'youtube';
+  const platform = job.platform;
   const contentType = platform === 'instagram' ? 'posts' : 'videos';
   return `- ${job.channel_title} (${platform.charAt(0).toUpperCase() + platform.slice(1)}): ${job.new_videos} new ${contentType}`;
 }).join('\n')}
@@ -171,7 +171,7 @@ This email was sent automatically by the Social Media Data Collector system.`;
     ${viralVideos.length > 0 ? `
     <h3>Viral Content</h3>
     ${viralVideos.map(video => {
-      const platform = video.platform || 'youtube';
+      const platform = video.platform;
       let contentUrl;
       if (platform === 'instagram') {
         contentUrl = video.shortCode ? `https://www.instagram.com/p/${video.shortCode}/` : '#';
@@ -202,7 +202,7 @@ This email was sent automatically by the Social Media Data Collector system.`;
     <h3>Sync Job Summary</h3>
     <ul>
       ${jobResults.map(job => {
-        const platform = job.platform || 'youtube';
+        const platform = job.platform;
         const contentType = platform === 'instagram' ? 'posts' : 'videos';
         return `<li><strong>${job.channel_title}</strong> (${platform.charAt(0).toUpperCase() + platform.slice(1)}): ${job.new_videos} new ${contentType}</li>`;
       }).join('')}

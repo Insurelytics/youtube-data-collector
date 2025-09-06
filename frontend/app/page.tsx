@@ -168,7 +168,7 @@ export default function HomePage() {
         totalViews: Number(r.totalViews || 0),
         avgViews: Number(r.avgViews || 0),
         viralVideos: Number(r.viralVideoCount || 0),
-        platform: r.platform || 'youtube',
+        platform: r.platform,
       }))
       setChannels(mapped)
     } catch (error) {
@@ -210,6 +210,26 @@ export default function HomePage() {
     loadSettings()
   }, [])
 
+  async function waitForChannelToAppear(handle: string, platform: string, maxWaitTime = 120000) {
+    const channelId = platform === 'instagram' ? `ig_${handle}` : handle
+    const startTime = Date.now()
+    
+    while (Date.now() - startTime < maxWaitTime) {
+      await loadChannels()
+      
+      // Check if channel appears in our current channel list
+      const foundChannel = channels.find(ch => ch.id === channelId)
+      if (foundChannel) {
+        return foundChannel
+      }
+      
+      // Wait 2 seconds before next check
+      await new Promise(resolve => setTimeout(resolve, 2000))
+    }
+    
+    return null
+  }
+
   async function addChannel() {
     const handle = extractHandle(newChannelUrl)
     if (!handle) {
@@ -231,7 +251,7 @@ export default function HomePage() {
 
     toast({
       title: `Adding ${selectedPlatform} channel`,
-      description: `Scraping data for ${handle}. This may take ${estimatedTime}...`
+      description: `Getting channel info for ${handle}. This may take ${estimatedTime}...`
     })
 
     try {
@@ -249,15 +269,26 @@ export default function HomePage() {
       const result = await res.json()
       setNewChannelUrl("")
       
-      // Add a small delay to ensure the database transaction is committed
-      // before refreshing the channel list
-      await new Promise(resolve => setTimeout(resolve, 500))
-      await loadChannels()
-
-      toast({
-        title: "Channel added successfully!",
-        description: `${handle} has been added with ${result.count || 0} posts.`
+      // Update loading message to indicate we're waiting for channel to appear
+      setLoadingState({
+        type: 'adding',
+        message: `Channel job created, waiting for ${handle} to appear in database...`
       })
+
+      // Wait for channel to actually appear in database
+      const foundChannel = await waitForChannelToAppear(handle, selectedPlatform)
+      
+      if (foundChannel) {
+        toast({
+          title: "Channel added successfully!",
+          description: `${foundChannel.name} has been added and is now visible.`
+        })
+      } else {
+        toast({
+          title: "Channel added",
+          description: `${handle} is being processed in the background. It should appear shortly.`
+        })
+      }
 
     } catch (e: any) {
       console.error('Add channel error:', e)
@@ -291,7 +322,7 @@ export default function HomePage() {
     }
   }
 
-  async function resyncChannel(handle: string, platform: string = 'youtube') {
+  async function resyncChannel(handle: string, platform: string) {
     const isInstagram = platform === 'instagram'
     const estimatedTime = isInstagram ? '2-3 minutes' : '30 seconds'
     
@@ -322,10 +353,6 @@ export default function HomePage() {
       const result = await res.json()
       await loadChannels()
 
-      toast({
-        title: "Sync completed!",
-        description: `${handle} updated with ${result.count || 0} posts.`
-      })
     } catch (e: any) {
       console.error('Resync error:', e)
       toast({

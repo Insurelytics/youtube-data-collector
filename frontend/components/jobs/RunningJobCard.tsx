@@ -3,6 +3,7 @@
 import { RefreshCw, CheckCircle, XCircle, Clock, Pause } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
 import { Job } from "@/shared/types/job"
 import { formatDuration, formatDateTime, getElapsedTime } from "@/shared/utils/jobUtils"
 
@@ -69,6 +70,27 @@ export function RunningJobCard({ job, currentTime }: RunningJobCardProps) {
         </div>
       </CardHeader>
       <CardContent>
+        {/* Current Step and Progress */}
+        {job.status === 'running' && job.currentStep && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium text-muted-foreground">Current Step</p>
+              {job.progressCurrent && job.progressTotal && (
+                <p className="text-sm text-muted-foreground">
+                  {job.progressCurrent}/{job.progressTotal}
+                </p>
+              )}
+            </div>
+            <p className="text-base font-semibold mb-3">{job.currentStep}</p>
+            {job.progressCurrent && job.progressTotal && (
+              <Progress 
+                value={(job.progressCurrent / job.progressTotal) * 100} 
+                className="h-2"
+              />
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <p className="text-sm font-medium text-muted-foreground">Elapsed Time</p>

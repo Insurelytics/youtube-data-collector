@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
  * Initial scraping function - for new videos
  * Downloads images, processes topics/hashtags, and stores complete video data
  */
-export async function performInitialScraping(videos, platform = 'youtube') {
+export async function performInitialScraping(videos, platform, progressCallback = null) {
   if (!videos || videos.length === 0) return { newVideos: 0, processedVideos: 0 };
 
   console.log(`Starting initial scraping for ${videos.length} new ${platform} videos...`);
@@ -22,6 +22,8 @@ export async function performInitialScraping(videos, platform = 'youtube') {
   
   // For Instagram videos, download images
   if (platform === 'instagram') {
+    if (progressCallback) progressCallback('Downloading video images');
+    
     for (const video of videos) {
       if (video.displayUrl) {
         const localImageUrl = await downloadImage(video.displayUrl, video.id);
@@ -35,9 +37,17 @@ export async function performInitialScraping(videos, platform = 'youtube') {
   }
   
   // Process videos (download, extract audio, filter silence, and transcribe)
-  for (const video of videos) {
+  const videosWithAudio = videos.filter(v => v.videoUrl);
+  
+  for (let i = 0; i < videos.length; i++) {
+    const video = videos[i];
     try {
       if (video.videoUrl) {
+        // Update progress for transcription step
+        if (progressCallback) {
+          progressCallback('Transcribing audio', videosProcessed + 1, videosWithAudio.length);
+        }
+        
         console.log(`Processing video ${video.id} for audio and transcription...`);
         const audioPath = await processVideo(video.videoUrl, video.id, platform);
         
@@ -105,7 +115,7 @@ export async function performInitialScraping(videos, platform = 'youtube') {
  * Re-scraping function - for existing videos
  * Only updates engagement metrics (views, likes, comments)
  */
-export async function performRescraping(videos, platform = 'youtube') {
+export async function performRescraping(videos, platform, progressCallback = null) {
   if (!videos || videos.length === 0) return { updatedVideos: 0 };
 
   console.log(`Starting re-scraping for ${videos.length} existing ${platform} videos (engagement metrics only)...`);
@@ -136,7 +146,7 @@ export async function performRescraping(videos, platform = 'youtube') {
  * Smart scraping orchestrator - determines which videos are new vs existing
  * and routes them to the appropriate scraping function
  */
-export async function performSmartScraping(allVideos, platform = 'youtube') {
+export async function performSmartScraping(allVideos, platform, progressCallback = null) {
   if (!allVideos || allVideos.length === 0) {
     return { newVideos: 0, updatedVideos: 0, processedVideos: 0 };
   }
@@ -155,10 +165,11 @@ export async function performSmartScraping(allVideos, platform = 'youtube') {
   console.log(`Found ${newVideos.length} new videos and ${existingVideos.length} existing videos to update`);
   
   // Perform initial scraping for new videos
-  const initialResults = await performInitialScraping(newVideos, platform);
+  const initialResults = await performInitialScraping(newVideos, platform, progressCallback);
   
-  // Perform re-scraping for existing videos
-  const rescrapingResults = await performRescraping(existingVideos, platform);
+  // Perform re-scraping for existing videos (lightweight update)
+  if (progressCallback) progressCallback('Updating engagement metrics');
+  const rescrapingResults = await performRescraping(existingVideos, platform, progressCallback);
   
   const totalResults = {
     newVideos: initialResults.newVideos,

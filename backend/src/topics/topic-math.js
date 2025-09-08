@@ -2,6 +2,9 @@
 import { getAllVideos, getAllTopics, getAllVideoTopics } from '../database/index.js';
 import { calculateEngagementScore } from '../utils/engagement-utils.js';
 
+// Export the category threshold constant
+export const CATEGORY_THRESHOLD = 0.5;
+
 // return a list of topics sorted by how positively they impact video engagement
 export function getTopicRanking(topics) {
     // will be a fancy function for sorting topics by how positively they impact video engagement
@@ -28,6 +31,7 @@ class Topic {
 
 // return a force directed graph of topics along with their engagement multiplier and other metrics
 export function getTopicGraph(regularizationWeight = 10, minimumSampleSize = 1, maxNodes = 10) {
+    // maxNodes = 1000;
     // 1: Get all videos from the database
     const videos = getAllVideos();
     // 2: Compute engagement score for each video
@@ -98,7 +102,8 @@ export function getTopicGraph(regularizationWeight = 10, minimumSampleSize = 1, 
             publishedAt: video.publishedAt
         }));
     });
-    // 6: Compute topic closeness score by seeing what percentage of videos with one topic also have the other topic
+    // 6: Compute directional topic connections 
+    // Each topic calculates: what percentage of its videos also have each other topic
     topicObjects.forEach(topic => {
         topicObjects.forEach(otherTopic => {
             if (topic.name === otherTopic.name) return;
@@ -107,6 +112,7 @@ export function getTopicGraph(regularizationWeight = 10, minimumSampleSize = 1, 
             topic.connections.push(new Connection(otherTopic, sharedVideos.length / topic.videos.length));
         });
     }); 
+    
     // 7: Filter out 0% connections and limit to the top 5 connections for each topic
     topicObjects.forEach(topic => {
         topic.connections = topic.connections
@@ -118,8 +124,137 @@ export function getTopicGraph(regularizationWeight = 10, minimumSampleSize = 1, 
                 }
                 return b.weight - a.weight;
             })
-            .slice(0, 5);
+            .slice(0, 50);
     });   
-    // 8: return the topic objects
-    return topicObjects;
+    
+    // 8: Detect dynamic categories based on high-strength incoming connections
+    // A topic is considered a category if it has multiple topics that frequently appear with it
+    const categoryThreshold = CATEGORY_THRESHOLD; // 80% connection strength threshold
+    const incomingConnections = new Map(); // Map of topic -> array of incoming high-strength connections
+    const outgoingConnections = new Map(); // Map of topic -> array of outgoing high-strength connections
+    
+    topicObjects.forEach(topic => {
+        topic.connections.forEach(connection => {
+            if (connection.weight >= categoryThreshold) { // 80% or higher connection
+                // Track incoming connections
+                if (!incomingConnections.has(connection.topic.name)) {
+                    incomingConnections.set(connection.topic.name, []);
+                }
+                incomingConnections.get(connection.topic.name).push(topic.name);
+                
+                // Track outgoing connections
+                if (!outgoingConnections.has(topic.name)) {
+                    outgoingConnections.set(topic.name, []);
+                }
+                outgoingConnections.get(topic.name).push(connection.topic.name);
+            }
+        });
+    });
+    
+    // Define categories as topics with at least 2 incoming high-strength connections
+    // Resolve conflicts where candidates have high-strength connections to other candidates
+    const minIncomingConnections = 2;
+    const candidateCategories = new Map(); // Map of topic name to topic object
+    const mutualExclusions = new Map(); // Map of topic name to array of topics it excludes
+    
+    // First pass: identify candidate categories
+    incomingConnections.forEach((incomingTopics, targetTopic) => {
+        if (incomingTopics.length >= minIncomingConnections) {
+            // All topics with sufficient incoming connections are candidates
+            const topicObj = topicObjects.find(t => t.name === targetTopic);
+            candidateCategories.set(targetTopic, topicObj);
+        }
+    });
+    
+    // Second pass: remove candidates that have high-strength connections to other candidates
+    const detectedCategories = new Set();
+    const disqualified = new Set();
+    
+    // For each candidate, check if it should be disqualified
+    candidateCategories.forEach((topicObj, topicName) => {
+        const outgoing = outgoingConnections.get(topicName) || [];
+        
+        // Check if this candidate connects to any other candidate
+        const connectedCandidates = outgoing.filter(otherTopic => candidateCategories.has(otherTopic));
+        
+        if (connectedCandidates.length > 0) {
+            // This topic connects to other candidates - determine who should be disqualified
+            connectedCandidates.forEach(otherTopic => {
+                const otherTopicObj = candidateCategories.get(otherTopic);
+                
+                // Disqualify the topic with fewer videos (or later in array if tied)
+                if (topicObj.videos.length < otherTopicObj.videos.length) {
+                    disqualified.add(topicName);
+                } else if (topicObj.videos.length === otherTopicObj.videos.length) {
+                    // If tied, disqualify the one that appears later in the array
+                    const thisIndex = topicObjects.findIndex(t => t.name === topicName);
+                    const otherIndex = topicObjects.findIndex(t => t.name === otherTopic);
+                    if (thisIndex > otherIndex) {
+                        disqualified.add(topicName);
+                    } else {
+                        disqualified.add(otherTopic);
+                    }
+                } else {
+                    disqualified.add(otherTopic);
+                }
+            });
+        }
+    });
+    
+    // Add all non-disqualified candidates as categories
+    candidateCategories.forEach((topicObj, topicName) => {
+        if (!disqualified.has(topicName)) {
+            detectedCategories.add(topicName);
+        }
+    });
+    
+    // Mark topics as categories or regular topics
+    topicObjects.forEach(topic => {
+        topic.isCategory = detectedCategories.has(topic.name);
+        topic.incomingCategoryConnections = incomingConnections.get(topic.name) || [];
+    });
+    
+    // 9: Calculate bidirectional relationships for visualization
+    // Store both directional connections and max-based relationships
+    const relationships = [];
+    const addedRelationships = new Set();
+    
+    topicObjects.forEach((topic, sourceIndex) => {
+        topic.connections.forEach(connection => {
+            const targetIndex = topicObjects.findIndex(t => t.name === connection.topic.name);
+            if (targetIndex !== -1) {
+                // Create relationship key (always use smaller index first for consistency)
+                const relKey = sourceIndex < targetIndex 
+                    ? `${sourceIndex}-${targetIndex}` 
+                    : `${targetIndex}-${sourceIndex}`;
+                
+                if (!addedRelationships.has(relKey)) {
+                    addedRelationships.add(relKey);
+                    
+                    // Find the reverse connection
+                    const targetTopic = topicObjects[targetIndex];
+                    const reverseConnection = targetTopic.connections.find(c => c.topic.name === topic.name);
+                    
+                    const forwardStrength = connection.weight;
+                    const reverseStrength = reverseConnection ? reverseConnection.weight : 0;
+                    
+                    // Store relationship with both directions
+                    relationships.push({
+                        source: sourceIndex,
+                        target: targetIndex,
+                        forwardStrength,  // source -> target
+                        reverseStrength,  // target -> source  
+                        maxStrength: Math.max(forwardStrength, reverseStrength), // For visualization
+                        label: `${topic.name} - ${connection.topic.name}`
+                    });
+                }
+            }
+        });
+    });
+    
+    // 10: Return both topics and calculated relationships
+    return {
+        topics: topicObjects,
+        relationships
+    };
 }

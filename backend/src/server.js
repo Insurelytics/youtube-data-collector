@@ -29,7 +29,7 @@ import {
   getVideosNeedingAudioProcessing,
   getVideosNeedingTranscription
 } from './database/index.js';
-import { getTopicRanking, getTopicGraph } from './topics/topic-math.js';
+import { getTopicRanking, getTopicGraph, CATEGORY_THRESHOLD } from './topics/topic-math.js';
 
 import { getChannelByHandle as getYouTubeChannelByHandle } from './scraping/youtube.js';
 import { getChannelByHandle as getInstagramChannelByHandle } from './scraping/instagram.js';
@@ -355,68 +355,86 @@ function createServer() {
   app.get('/api/topics/graph', (req, res) => {
     try {
       // Get maxNodes from query parameter, default to 10, max 50
-      const maxNodes = Math.min(Math.max(parseInt(req.query.maxNodes) || 10, 1), 50);
+      const maxNodes = Math.min(Math.max(parseInt(req.query.maxNodes) || 10, 1), 500);
       
-      // Get the topic graph data
-      const topicGraph = getTopicGraph(10, 1, maxNodes);
+      // Get the topic graph data (now returns { topics, relationships })
+      const { topics: topicObjects, relationships: calculatedRelationships } = getTopicGraph(10, 1, maxNodes);
       
-      // Function to categorize topics based on name
-      const categorizeTopicByName = (name) => {
-        const lowerName = name.toLowerCase();
-        if (lowerName.includes('ai') || lowerName.includes('machine learning') || lowerName.includes('ml')) {
-          return { category: "Technology", group: "emerging-tech" };
+      // Define 20 good colors for categories
+      const categoryColors = [
+        "#e74c3c", "#3498db", "#2ecc71", "#f39c12", "#9b59b6",
+        "#1abc9c", "#34495e", "#e67e22", "#8e44ad", "#16a085",
+        "#27ae60", "#2980b9", "#f1c40f", "#d35400", "#c0392b",
+        "#7f8c8d", "#17a2b8", "#6f42c1", "#fd7e14", "#20c997"
+      ];
+      
+      // Helper function to determine topic category based on connections
+      const getCategoryForTopic = (topic) => {
+        if (topic.isCategory) {
+          return topic.name; // Categories are their own category
         }
-        if (lowerName.includes('gaming') || lowerName.includes('game') || lowerName.includes('stream')) {
-          return { category: "Gaming", group: "gaming-content" };
+        
+        // Find high-strength connections to actual categories only
+        const categoryConnections = topic.connections
+          .filter(conn => 
+            conn.weight > CATEGORY_THRESHOLD && // Greater than threshold connection
+            conn.topic.isCategory  // Connected topic must be a category
+          )
+          .sort((a, b) => b.weight - a.weight);
+        
+        if (categoryConnections.length > 0) {
+          // Return the first category this topic is connected to
+          return categoryConnections[0].topic.name;
         }
-        if (lowerName.includes('food') || lowerName.includes('recipe') || lowerName.includes('cooking')) {
-          return { category: "Cooking", group: "cooking-basics" };
-        }
-        if (lowerName.includes('tech') || lowerName.includes('iphone') || lowerName.includes('android') || lowerName.includes('programming') || lowerName.includes('coding')) {
-          return { category: "Technology", group: "consumer-tech" };
-        }
-        return { category: "General", group: "general" };
+        
+        return "General"; // Default fallback
       };
 
-      // Transform data to match frontend expectations
-      const topics = topicGraph.map((topic, index) => {
-        const categoryInfo = categorizeTopicByName(topic.name);
-        return {
-          id: index + 1,
-          topic: topic.name, // Frontend expects 'topic' instead of 'name'
-          engagementMultiplier: topic.engagementMultiplier || 1,
-          videoCount: topic.videos.length,
-          category: categoryInfo.category,
-          group: categoryInfo.group,
-          description: `${topic.name} content with ${topic.videos.length} videos`,
-          topVideos: topic.topVideos
-        };
+      // Get all unique categories and assign colors
+      const allCategories = [...new Set(topicObjects.map(topic => getCategoryForTopic(topic)))];
+      const categoryColorMap = {};
+      allCategories.forEach((category, index) => {
+        if (category === "General") {
+          categoryColorMap[category] = "#6b7280"; // Grey color for General
+        } else {
+          categoryColorMap[category] = categoryColors[index % categoryColors.length];
+        }
       });
-      
-      // Transform connections to relationships
-      const relationships = [];
-      const addedRelationships = new Set(); // Track added relationships to avoid duplicates
-      topicGraph.forEach((topic, sourceIndex) => {
-        topic.connections.forEach(connection => {
-          const targetIndex = topicGraph.findIndex(t => t.name === connection.topic.name);
-          if (targetIndex !== -1) {
-            // Create a unique key for this relationship (always use smaller index first)
-            const relKey = sourceIndex < targetIndex 
-              ? `${sourceIndex}-${targetIndex}` 
-              : `${targetIndex}-${sourceIndex}`;
-            
-            if (!addedRelationships.has(relKey)) {
-              addedRelationships.add(relKey);
-              relationships.push({
-                source: sourceIndex + 1,
-                target: targetIndex + 1,
-                strength: connection.weight, // Frontend expects 'strength' instead of 'weight'
-                label: `${topic.name} - ${connection.topic.name}`
-              });
-            }
-          }
+
+        // Transform data to match frontend expectations using smart categorization
+        const topics = topicObjects.map((topic, index) => {
+          const category = getCategoryForTopic(topic);
+          return {
+            id: index + 1,
+            topic: topic.name, // Frontend expects 'topic' instead of 'name'
+            engagementMultiplier: topic.engagementMultiplier || 1,
+            videoCount: topic.videos.length,
+            category: category,
+            categoryColor: categoryColorMap[category],
+            group: topic.isCategory ? `category-${topic.name.toLowerCase().replace(/\s+/g, '-')}` : `${category.toLowerCase()}-topic`,
+            isCategory: topic.isCategory || false,
+            incomingCategoryConnections: topic.incomingCategoryConnections || [],
+            description: topic.isCategory 
+              ? `Category topic with ${topic.incomingCategoryConnections.length} sub-topics`
+              : `${topic.name} content with ${topic.videos.length} videos`,
+            topVideos: topic.topVideos,
+            // Include directional connections for selected topic views
+            outgoingConnections: topic.connections.map(conn => ({
+              targetTopic: conn.topic.name,
+              strength: conn.weight
+            }))
+          };
         });
-      });
+      
+      // Use the pre-calculated relationships and adjust IDs to be 1-based
+      const relationships = calculatedRelationships.map(rel => ({
+        source: rel.source + 1,  // Convert to 1-based indexing for frontend
+        target: rel.target + 1,
+        strength: rel.maxStrength,  // Use max strength for visual display
+        forwardStrength: rel.forwardStrength,  // Available for directional analysis
+        reverseStrength: rel.reverseStrength,  // Available for directional analysis
+        label: rel.label
+      }));
       
       res.json({
         topics,

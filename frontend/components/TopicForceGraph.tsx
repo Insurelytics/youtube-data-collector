@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import * as d3 from "d3"
-import { Network, Eye, MessageCircle, Heart, ExternalLink, User } from "lucide-react"
+import { Network, Eye, MessageCircle, Heart, ExternalLink, User, ZoomIn, ZoomOut, RotateCcw } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 
 type Topic = {
   id: number
@@ -13,12 +14,26 @@ type Topic = {
   engagementMultiplier: number
   videoCount: number
   category: string
+  categoryColor?: string
   group: string
   x?: number
   y?: number
+  isCategory?: boolean
+  incomingCategoryConnections?: string[]
+  outgoingConnections?: Array<{
+    targetTopic: string
+    strength: number
+  }>
 }
 
-type Relationship = { source: number; target: number; strength: number; label: string }
+type Relationship = { 
+  source: number; 
+  target: number; 
+  strength: number; 
+  label: string;
+  forwardStrength?: number;
+  reverseStrength?: number;
+}
 
 type Video = {
   id: string
@@ -53,21 +68,59 @@ const PERFORMANCE_THRESHOLDS = {
 
 const ENABLE_MOVEMENT = true // Set to true to enable force simulation, false to see static preprocessing
 const FORCE_STRENGTH = 0.5 // Controls how weak the forces are (0.1 = very weak, 1.0 = normal strength)
-const NUM_PHYSICS_CONNECTIONS = 3 // Maximum number of connections per node for physics simulation
+const NUM_PHYSICS_CONNECTIONS = 15 // Maximum number of connections per node for physics simulation
 const SIMULATION_ITERATIONS = 500 // Run simulation to completion with this many ticks
 
-const getNodeRadius = (videoCount: number) =>
-  Math.max(8, Math.min(20, 8 + videoCount * 0.8))
-const getNodeSize = (vc: number) => Math.max(16, Math.min(40, 16 + vc * 1.6))
+const getNodeRadius = (videoCount: number, isCategory: boolean = false) => {
+  const baseRadius = Math.max(8, Math.min(20, 8 + videoCount * 0.8))
+  return isCategory ? baseRadius * 0.9 : baseRadius // Categories are slightly smaller
+}
+
+const getNodeSize = (vc: number, isCategory: boolean = false) => {
+  const baseSize = Math.max(16, Math.min(40, 16 + vc * 1.6))
+  return isCategory ? baseSize * 1.2 : baseSize // Categories are slightly bigger
+}
 
 const getMultiplierColor = (m: number) => {
-  if (m >= PERFORMANCE_THRESHOLDS.EXCELLENT) return { primary: "#10b981", secondary: "#065f46", glow: "rgba(16, 185, 129, 0.4)" }
-  if (m >= PERFORMANCE_THRESHOLDS.VERY_GOOD) return { primary: "#22c55e", secondary: "#166534", glow: "rgba(34, 197, 94, 0.4)" }
-  if (m >= PERFORMANCE_THRESHOLDS.GOOD) return { primary: "#84cc16", secondary: "#365314", glow: "rgba(132, 204, 22, 0.4)" }
-  if (m >= PERFORMANCE_THRESHOLDS.ABOVE_AVG) return { primary: "#eab308", secondary: "#713f12", glow: "rgba(234, 179, 8, 0.4)" }
-  if (m >= PERFORMANCE_THRESHOLDS.AVERAGE) return { primary: "#f59e0b", secondary: "#92400e", glow: "rgba(245, 158, 11, 0.4)" }
-  if (m >= 0.8) return { primary: "#f97316", secondary: "#9a3412", glow: "rgba(249, 115, 22, 0.4)" }
-  return { primary: "#ef4444", secondary: "#991b1b", glow: "rgba(239, 68, 68, 0.4)" }
+  // Clamp the value between 0.5 and 2.0
+  const clampedValue = Math.max(0.5, Math.min(2.0, m))
+  
+  let red, green, blue
+  
+  if (clampedValue < 1.0) {
+    // First half: red to grey (0.5 -> 1.0)
+    const t = (clampedValue - 0.5) / (1.0 - 0.5) // 0 to 1
+    red = Math.round(255 * (1 - t * 0.5)) // 255 to 128
+    green = Math.round(128 * t) // 0 to 128
+    blue = Math.round(128 * t) // 0 to 128
+  } else {
+    // Second half: grey to green (1.0 -> 2.0)
+    const t = (clampedValue - 1.0) / (2.0 - 1.0) // 0 to 1
+    red = Math.round(128 * (1 - t)) // 128 to 0
+    green = Math.round(128 + 127 * t) // 128 to 255
+    blue = Math.round(128 * (1 - t)) // 128 to 0
+  }
+  
+  const primary = `rgb(${red}, ${green}, ${blue})`
+  
+  // Create darker version for secondary color
+  const darkRed = Math.round(red * 0.6)
+  const darkGreen = Math.round(green * 0.6)
+  const darkBlue = Math.round(blue * 0.6)
+  const secondary = `rgb(${darkRed}, ${darkGreen}, ${darkBlue})`
+  
+  // Create glow with alpha
+  const glow = `rgba(${red}, ${green}, ${blue}, 0.4)`
+  
+  return { primary, secondary, glow }
+}
+
+const getCategoryColor = () => {
+  return { primary: "#8b5cf6", secondary: "#581c87", glow: "rgba(139, 92, 246, 0.4)" } // Purple for categories
+}
+
+const getCategoryBasedColor = (categoryColor: string) => {
+  return { primary: categoryColor, secondary: categoryColor, glow: `${categoryColor}40` } // Use category color with 25% opacity glow
 }
 
 // ------------------------------
@@ -121,6 +174,8 @@ export default function TopicForceGraph({
   const [isSimulationRunning, setIsSimulationRunning] = useState(false)
   const [selectedTopicVideos, setSelectedTopicVideos] = useState<Video[]>([])
   const [loadingVideos, setLoadingVideos] = useState(false)
+  const [categoryView, setCategoryView] = useState(false)
+  const zoomBehaviorRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null)
 
   
   // Filtered relationships for both physics and visual display
@@ -234,13 +289,13 @@ export default function TopicForceGraph({
       for (const node of nodesByStrength) {
         if (!node.x || !node.y) continue
         
-        const nodeRadius = getNodeRadius(node.videoCount)
+        const nodeRadius = getNodeRadius(node.videoCount, node.isCategory)
         
         // Check for overlaps with other nodes
         for (const otherNode of processedNodes) {
           if (node.id === otherNode.id || !otherNode.x || !otherNode.y) continue
           
-          const otherRadius = getNodeRadius(otherNode.videoCount)
+          const otherRadius = getNodeRadius(otherNode.videoCount, otherNode.isCategory)
           const minDistance = nodeRadius + otherRadius + 10 // 10px padding
           
           const dx = node.x - otherNode.x
@@ -307,10 +362,67 @@ export default function TopicForceGraph({
     return result
   }
 
+  // Separate categories deterministically to ensure they stay far apart
+  const separateCategories = (nodes: Topic[], minCategoryDistance = 800, maxIterations = 50) => {
+    console.log('separateCategories called with:', nodes.length, 'nodes')
+    const processedNodes = [...nodes]
+    const categories = processedNodes.filter(n => n.isCategory)
+    console.log('Found categories:', categories.length, categories.map(c => c.topic))
+    
+    if (categories.length <= 1) {
+      console.log('Not enough categories to separate, returning early')
+      return processedNodes
+    }
+    
+    for (let iter = 0; iter < maxIterations; iter++) {
+      let movedAny = false
+      
+      // Check each pair of categories
+      for (let i = 0; i < categories.length; i++) {
+        for (let j = i + 1; j < categories.length; j++) {
+          const cat1 = categories[i]
+          const cat2 = categories[j]
+          
+          if (!cat1.x || !cat1.y || !cat2.x || !cat2.y) continue
+          
+          const dx = cat1.x - cat2.x
+          const dy = cat1.y - cat2.y
+          const distance = Math.sqrt(dx * dx + dy * dy)
+          
+          if (distance < minCategoryDistance) {
+            console.log(`Moving categories apart: ${cat1.topic} and ${cat2.topic}, distance: ${distance}`)
+            // Calculate separation vector - move each category half the needed distance
+            const targetDistance = minCategoryDistance + 50 // Extra padding
+            const moveDistance = (targetDistance - distance) / 2
+            
+            // Normalize direction vector
+            const magnitude = Math.sqrt(dx * dx + dy * dy)
+            const unitX = magnitude > 0 ? dx / magnitude : 1
+            const unitY = magnitude > 0 ? dy / magnitude : 0
+            
+            // Move categories apart along the line connecting them
+            cat1.x += unitX * moveDistance
+            cat1.y += unitY * moveDistance
+            cat2.x -= unitX * moveDistance  
+            cat2.y -= unitY * moveDistance
+            
+            console.log(`After move - ${cat1.topic}: (${cat1.x}, ${cat1.y}), ${cat2.topic}: (${cat2.x}, ${cat2.y})`)
+            movedAny = true
+          }
+        }
+      }
+      
+      if (!movedAny) break
+    }
+    
+    return processedNodes
+  }
+
   // Assign hash-based deterministic positions
   const seededNodes = useMemo(() => {
     // Filter out any invalid topics first
     const validTopics = inputTopics.filter(t => t && t.id !== undefined && t.topic)
+    console.log('All input topics:', inputTopics.map(t => ({ topic: t.topic, isCategory: t.isCategory })))
     
     const nodes = validTopics.map(t => {
       const pos = getRandomPosition(t.topic)
@@ -321,10 +433,15 @@ export default function TopicForceGraph({
       }
     })
 
-    // Apply preprocessing to move connected pairs closer
-    const preprocessedNodes = preprocessConnectedPairs(nodes, relationships, 0.5, 3)
+    const maxNodes = nodes.length
+    
+    // FIRST: Separate categories to ensure they stay far apart
+    const categorySeparatedNodes = separateCategories(nodes, 5000*maxNodes/40, 500)
 
-    // Separate any overlapping nodes
+    // THEN: Apply preprocessing to move connected pairs closer
+    const preprocessedNodes = preprocessConnectedPairs(categorySeparatedNodes, relationships, 0.5, 3)
+
+    // FINALLY: Separate any overlapping nodes (but preserve category separation)
     const separatedNodes = separateOverlappingNodes(preprocessedNodes, relationships, 50)
 
     return separatedNodes
@@ -382,7 +499,7 @@ export default function TopicForceGraph({
           "collide",
           d3
             .forceCollide()
-            .radius((d: any) => getNodeRadius(d.videoCount) + 5)
+            .radius((d: any) => getNodeRadius(d.videoCount, d.isCategory) + 5)
             .strength(0.8 * FORCE_STRENGTH) // Stronger collision
             .iterations(2) // More collision iterations
         )
@@ -424,12 +541,25 @@ export default function TopicForceGraph({
     return connected
   }, [selectedTopic, filteredRelationships])
 
-  // Center the view when simulation is complete (initial zoom only)
+  // Setup zoom behavior and center the view when simulation is complete
   useEffect(() => {
     if (!svgRef.current || !gRef.current || !isSimulationComplete || !finalNodes.length) return
 
     const svg = d3.select(svgRef.current)
     const g = d3.select(gRef.current)
+
+    // Create zoom behavior
+    const zoom = d3.zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.1, 4])
+      .on("zoom", (event) => {
+        g.attr("transform", event.transform)
+      })
+
+    // Store zoom behavior reference
+    zoomBehaviorRef.current = zoom
+
+    // Apply zoom behavior to SVG
+    svg.call(zoom)
 
     // Set initial zoom to fit content
     const pad = 40
@@ -463,12 +593,77 @@ export default function TopicForceGraph({
       .scale(scale)
       .translate(-x, -y)
     
-    // Apply the transform directly without zoom behavior
-    g.attr('transform', initialTransform.toString())
+    // Apply the initial transform through zoom behavior
+    svg.call(zoom.transform, initialTransform)
+
+    // Cleanup function to remove zoom behavior
+    return () => {
+      svg.on('.zoom', null)
+      zoomBehaviorRef.current = null
+    }
   }, [isSimulationComplete, finalNodes])
 
 
   const byId = useMemo(() => new Map(finalNodes.map(n => [n.id, n])), [finalNodes])
+
+  // Zoom control functions
+  const handleZoomIn = () => {
+    if (!svgRef.current || !zoomBehaviorRef.current) return
+    const svg = d3.select(svgRef.current)
+    svg.transition().duration(300).call(
+      zoomBehaviorRef.current.scaleBy, 1.5
+    )
+  }
+
+  const handleZoomOut = () => {
+    if (!svgRef.current || !zoomBehaviorRef.current) return
+    const svg = d3.select(svgRef.current)
+    svg.transition().duration(300).call(
+      zoomBehaviorRef.current.scaleBy, 1 / 1.5
+    )
+  }
+
+  const handleResetZoom = () => {
+    if (!svgRef.current || !zoomBehaviorRef.current || !finalNodes.length) return
+    
+    // Deselect any selected topic
+    onTopicSelect(null)
+    
+    const svg = d3.select(svgRef.current)
+    
+    // Calculate fit-to-content transform
+    const pad = 40
+    const xs = finalNodes.map(n => n.x!)
+    const ys = finalNodes.map(n => n.y!)
+    const minX = Math.min(...xs) - pad
+    const maxX = Math.max(...xs) + pad
+    const minY = Math.min(...ys) - pad
+    const maxY = Math.max(...ys) + pad
+    
+    const rect = svgRef.current.getBoundingClientRect()
+    const width = rect.width || 800
+    const height = rect.height || 500
+    
+    const dx = maxX - minX
+    const dy = maxY - minY
+    
+    if (dx === 0 || dy === 0) return
+    
+    const x = (minX + maxX) / 2
+    const y = (minY + maxY) / 2
+    const scale = Math.min(width / dx, height / dy) * 0.9
+    
+    if (!isFinite(scale) || scale <= 0) return
+    
+    const resetTransform = d3.zoomIdentity
+      .translate(width / 2, height / 2)
+      .scale(scale)
+      .translate(-x, -y)
+    
+    svg.transition().duration(750).call(
+      zoomBehaviorRef.current.transform, resetTransform
+    )
+  }
 
   const pathFor = (a: Topic, b: Topic) => {
     const mx = ((a.x ?? 0) + (b.x ?? 0)) / 2
@@ -541,16 +736,59 @@ export default function TopicForceGraph({
     <div className="space-y-6">
       <Card className="h-[600px]">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Network className="h-5 w-5" />
-            Topic Relationship Network
-          </CardTitle>
-          <CardDescription>
-            Click nodes to explore topic relationships and view related videos
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Network className="h-5 w-5" />
+                Topic Relationship Network
+              </CardTitle>
+              <CardDescription>
+                Click nodes to explore topic relationships and view related videos. Use mouse wheel or zoom buttons to zoom, drag to pan.
+              </CardDescription>
+            </div>
+            <Button
+              variant={categoryView ? "default" : "outline"}
+              onClick={() => setCategoryView(!categoryView)}
+              className="shrink-0"
+            >
+              {categoryView ? "Performance View" : "Category View"}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="h-full p-0">
           <div className="relative w-full h-[500px] bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-lg overflow-hidden">
+            {/* Zoom Controls */}
+            {isSimulationComplete && (
+              <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleZoomIn}
+                  className="w-8 h-8 p-0"
+                  title="Zoom In"
+                >
+                  <ZoomIn className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleZoomOut}
+                  className="w-8 h-8 p-0"
+                  title="Zoom Out"
+                >
+                  <ZoomOut className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleResetZoom}
+                  className="w-8 h-8 p-0"
+                  title="Reset Zoom"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
             {isSimulationRunning ? (
               // Loading spinner while simulation runs
               <div className="absolute inset-0 flex items-center justify-center">
@@ -566,7 +804,7 @@ export default function TopicForceGraph({
                 width="100%" 
                 height="100%" 
                 viewBox="0 0 800 500" 
-                className="absolute inset-0"
+                className="absolute inset-0 cursor-grab active:cursor-grabbing"
                 onClick={(e) => {
                   // Only deselect if clicking the background (not a node)
                   if (e.target === e.currentTarget || (e.target as Element).tagName === 'rect') {
@@ -628,12 +866,21 @@ export default function TopicForceGraph({
 
                   {/* Nodes */}
                   {finalNodes.map(n => {
-                    const size = getNodeSize(n.videoCount)
+                    const size = getNodeSize(n.videoCount, n.isCategory)
                     const r = size / 2
                     const selected = selectedTopic === n.id
                     const connected = connectedNodeIds.has(n.id)
                     const dimmed = selectedTopic && !selected && !connected
-                    const colors = getMultiplierColor(n.engagementMultiplier)
+                    
+                    // Determine colors based on view mode
+                    let colors;
+                    if (n.isCategory) {
+                      colors = getCategoryColor() // Categories always purple
+                    } else if (categoryView && n.categoryColor) {
+                      colors = getCategoryBasedColor(n.categoryColor) // Use category color in category view
+                    } else {
+                      colors = getMultiplierColor(n.engagementMultiplier) // Use performance colors in performance view
+                    }
                     
                     let strokeColor = colors.primary
                     let strokeWidth = 2
@@ -689,6 +936,7 @@ export default function TopicForceGraph({
                         stroke={strokeColor}
                         strokeWidth={strokeWidth}
                       />
+                      
                       
                       {/* Video count indicator - only for selected/connected nodes */}
                       {(selected || connected) && (

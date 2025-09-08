@@ -1,4 +1,5 @@
 import { getDatabase } from './connection.js';
+import { getEngagementSqlExpression } from '../utils/engagement-utils.js';
 
 export function initTopicsSchema() {
   const db = getDatabase();
@@ -184,8 +185,10 @@ export function getVideosByTopic(topicName, { page = 1, pageSize = 50, source = 
   const total = db.prepare(totalQuery).get(...params)?.count || 0;
   
   const offset = (page - 1) * pageSize;
+  const engagementExpr = getEngagementSqlExpression();
   let videosQuery = `
-    SELECT v.*, t.name as topic_name, vt.source as topic_source, c.title as channelTitle, c.handle as channelHandle
+    SELECT v.*, t.name as topic_name, vt.source as topic_source, c.title as channelTitle, c.handle as channelHandle, v.channelId,
+           ${engagementExpr} as engagement
     FROM videos v
     INNER JOIN video_topics vt ON v.id = vt.video_id
     INNER JOIN topics t ON vt.topic_id = t.id
@@ -199,7 +202,7 @@ export function getVideosByTopic(topicName, { page = 1, pageSize = 50, source = 
     videoParams.push(source);
   }
   
-  videosQuery += ' ORDER BY v.publishedAt DESC LIMIT ? OFFSET ?';
+  videosQuery += ` ORDER BY ${engagementExpr} DESC LIMIT ? OFFSET ?`;
   videoParams.push(pageSize, offset);
   
   const videos = db.prepare(videosQuery).all(...videoParams);

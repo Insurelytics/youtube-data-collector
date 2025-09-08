@@ -1,8 +1,9 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 import * as d3 from "d3"
-import { Network, Eye, MessageCircle, Heart, ExternalLink } from "lucide-react"
+import { Network, Eye, MessageCircle, Heart, ExternalLink, User } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
@@ -29,6 +30,7 @@ type Video = {
   thumbnails: string | null
   platform: string
   videoUrl: string | null
+  channelId?: string
   channelTitle?: string
   localImageUrl?: string | null
   shortCode?: string | null
@@ -52,19 +54,20 @@ const PERFORMANCE_THRESHOLDS = {
 const ENABLE_MOVEMENT = true // Set to true to enable force simulation, false to see static preprocessing
 const FORCE_STRENGTH = 0.5 // Controls how weak the forces are (0.1 = very weak, 1.0 = normal strength)
 const NUM_PHYSICS_CONNECTIONS = 3 // Maximum number of connections per node for physics simulation
+const SIMULATION_ITERATIONS = 500 // Run simulation to completion with this many ticks
 
 const getNodeRadius = (videoCount: number) =>
-  Math.max(15, Math.min(30, videoCount / 2))
-const getNodeSize = (vc: number) => Math.max(30, Math.min(60, vc / 2))
+  Math.max(8, Math.min(20, 8 + videoCount * 0.8))
+const getNodeSize = (vc: number) => Math.max(16, Math.min(40, 16 + vc * 1.6))
 
 const getMultiplierColor = (m: number) => {
-  if (m >= PERFORMANCE_THRESHOLDS.EXCELLENT) return "fill-emerald-500"
-  if (m >= PERFORMANCE_THRESHOLDS.VERY_GOOD) return "fill-green-500"
-  if (m >= PERFORMANCE_THRESHOLDS.GOOD) return "fill-lime-500"
-  if (m >= PERFORMANCE_THRESHOLDS.ABOVE_AVG) return "fill-yellow-400"
-  if (m >= PERFORMANCE_THRESHOLDS.AVERAGE) return "fill-yellow-500"
-  if (m >= 0.8) return "fill-orange-500"
-  return "fill-red-500"
+  if (m >= PERFORMANCE_THRESHOLDS.EXCELLENT) return { primary: "#10b981", secondary: "#065f46", glow: "rgba(16, 185, 129, 0.4)" }
+  if (m >= PERFORMANCE_THRESHOLDS.VERY_GOOD) return { primary: "#22c55e", secondary: "#166534", glow: "rgba(34, 197, 94, 0.4)" }
+  if (m >= PERFORMANCE_THRESHOLDS.GOOD) return { primary: "#84cc16", secondary: "#365314", glow: "rgba(132, 204, 22, 0.4)" }
+  if (m >= PERFORMANCE_THRESHOLDS.ABOVE_AVG) return { primary: "#eab308", secondary: "#713f12", glow: "rgba(234, 179, 8, 0.4)" }
+  if (m >= PERFORMANCE_THRESHOLDS.AVERAGE) return { primary: "#f59e0b", secondary: "#92400e", glow: "rgba(245, 158, 11, 0.4)" }
+  if (m >= 0.8) return { primary: "#f97316", secondary: "#9a3412", glow: "rgba(249, 115, 22, 0.4)" }
+  return { primary: "#ef4444", secondary: "#991b1b", glow: "rgba(239, 68, 68, 0.4)" }
 }
 
 // ------------------------------
@@ -110,14 +113,15 @@ export default function TopicForceGraph({
   selectedTopic,
   onTopicSelect,
 }: Props) {
-  const [nodes, setNodes] = useState<Topic[]>([])
-  const [transform, setTransform] = useState(d3.zoomIdentity)
+  const router = useRouter()
   const svgRef = useRef<SVGSVGElement>(null)
-  const simRef = useRef<d3.Simulation<any, undefined> | null>(null)
+  const gRef = useRef<SVGGElement>(null)
+  const [finalNodes, setFinalNodes] = useState<Topic[]>([])
+  const [isSimulationComplete, setIsSimulationComplete] = useState(false)
+  const [isSimulationRunning, setIsSimulationRunning] = useState(false)
   const [selectedTopicVideos, setSelectedTopicVideos] = useState<Video[]>([])
   const [loadingVideos, setLoadingVideos] = useState(false)
 
-  const links = useMemo(() => relationships.map(r => ({ ...r })), [relationships])
   
   // Filtered relationships for both physics and visual display
   const [filteredRelationships, setFilteredRelationships] = useState<Relationship[]>([])
@@ -141,11 +145,19 @@ export default function TopicForceGraph({
         const selectedTopicData = inputTopics.find(t => t.id === selectedTopic)
         if (!selectedTopicData) return
 
-        const response = await fetch(`/api/topics/${encodeURIComponent(selectedTopicData.topic)}/videos?pageSize=10`)
+        const response = await fetch(`/api/topics/${encodeURIComponent(selectedTopicData.topic)}/videos?pageSize=9`)
         if (!response.ok) throw new Error('Failed to fetch videos')
         
         const data = await response.json()
-        setSelectedTopicVideos(data.videos || [])
+        // Deduplicate videos by ID to prevent React key conflicts
+        const videoMap = new Map<string, Video>()
+        ;(data.videos || []).forEach((video: Video) => {
+          if (!videoMap.has(video.id)) {
+            videoMap.set(video.id, video)
+          }
+        })
+        const uniqueVideos = Array.from(videoMap.values())
+        setSelectedTopicVideos(uniqueVideos)
       } catch (error) {
         console.error('Error fetching topic videos:', error)
         setSelectedTopicVideos([])
@@ -164,10 +176,7 @@ export default function TopicForceGraph({
     // Filter relationships above the threshold
     const strongConnections = relationships.filter(rel => rel.strength >= strengthThreshold)
     
-    console.log(`Processing ${strongConnections.length} connections above ${(strengthThreshold * 100)}% threshold for ${iterations} iterations`)
-    
     for (let iter = 0; iter < iterations; iter++) {
-      console.log(`--- Iteration ${iter + 1} ---`)
       const usedPairsThisIteration = new Set<string>()
       
       for (const rel of strongConnections) {
@@ -194,8 +203,6 @@ export default function TopicForceGraph({
           sourceNode.y = avgY
           targetNode.x = avgX
           targetNode.y = avgY
-          
-          console.log(`Moved ${sourceNode.topic} and ${targetNode.topic} to (${avgX.toFixed(2)}, ${avgY.toFixed(2)}) - strength: ${rel.strength.toFixed(3)}`)
         }
       }
     }
@@ -220,8 +227,6 @@ export default function TopicForceGraph({
       const strengthB = nodeStrengths.get(b.id) || 0
       return strengthA - strengthB
     })
-    
-    console.log(`Separating overlapping nodes - weakest to strongest connections`)
     
     for (let iter = 0; iter < maxIterations; iter++) {
       let movedAny = false
@@ -251,16 +256,12 @@ export default function TopicForceGraph({
             node.y = otherNode.y + Math.sin(angle) * targetDistance
             
             movedAny = true
-            
-            const nodeStrength = nodeStrengths.get(node.id) || 0
-            console.log(`Iter ${iter + 1}: Moved ${node.topic} (strength: ${nodeStrength.toFixed(3)}) away from ${otherNode.topic}`)
             break // Only move away from first overlapping node per iteration
           }
         }
       }
       
       if (!movedAny) {
-        console.log(`No overlaps found after ${iter + 1} iterations`)
         break
       }
     }
@@ -303,13 +304,15 @@ export default function TopicForceGraph({
       return filteredConnections.has(key)
     })
     
-    console.log(`Filtered connections for physics: ${relationships.length} → ${result.length}`)
     return result
   }
 
   // Assign hash-based deterministic positions
   const seededNodes = useMemo(() => {
-    const nodes = inputTopics.map(t => {
+    // Filter out any invalid topics first
+    const validTopics = inputTopics.filter(t => t && t.id !== undefined && t.topic)
+    
+    const nodes = validTopics.map(t => {
       const pos = getRandomPosition(t.topic)
       return {
         ...t,
@@ -324,128 +327,92 @@ export default function TopicForceGraph({
     // Separate any overlapping nodes
     const separatedNodes = separateOverlappingNodes(preprocessedNodes, relationships, 50)
 
-    console.log("Final topic locations after preprocessing and separation:")
-    separatedNodes.forEach(n =>
-      console.log(`${n.topic}: x=${n.x?.toFixed(2)}, y=${n.y?.toFixed(2)}`)
-    )
     return separatedNodes
   }, [inputTopics, relationships])
-
+  
+  // Run simulation to completion asynchronously, then freeze
   useEffect(() => {
     if (!seededNodes.length) return
-    simRef.current?.stop()
+
+    // Filter out any invalid nodes before proceeding
+    const validNodes = seededNodes.filter(n => n && n.id !== undefined && typeof n.x === 'number' && typeof n.y === 'number')
+    if (validNodes.length === 0) return
 
     if (!ENABLE_MOVEMENT) {
-      // Static mode: Just set the nodes without any simulation
-      setNodes([...seededNodes])
+      // Static mode: Use preprocessed positions directly
+      setFinalNodes([...validNodes])
+      setIsSimulationComplete(true)
+      setIsSimulationRunning(false)
       return
     }
+
+    // Start simulation loading state
+    setIsSimulationRunning(true)
+    setIsSimulationComplete(false)
     
-    const nodeById = new Map(seededNodes.map(n => [n.id, n]))
+    const nodeById = new Map(validNodes.map(n => [n.id, n]))
     const d3Links = filteredRelationships
-      .filter(l => nodeById.has(l.source) && nodeById.has(l.target))
+      .filter(l => l && nodeById.has(l.source) && nodeById.has(l.target))
       .map(l => ({
         source: nodeById.get(l.source)!,
         target: nodeById.get(l.target)!,
         strength: l.strength,
       }))
 
-    let tickCount = 0
-    const simulation = d3
-      .forceSimulation(seededNodes as any)
-      .randomSource(d3.randomLcg(1337))
-      .force("charge", d3.forceManyBody()
-        .strength(-30 * FORCE_STRENGTH)
-        .theta(0.9) // Increase theta for better performance (less accuracy, more speed)
-      )
-      .force(
-        "link",
-        d3
-          .forceLink(d3Links as any)
-          .id((d: any) => d.id)
-          .distance(100)
-          .strength(0.1 * FORCE_STRENGTH) // Simplified strength calculation
-          .iterations(1) // Reduce iterations for better performance
-      )
-      .force(
-        "collide",
-        d3
-          .forceCollide()
-          .radius((d: any) => getNodeRadius(d.videoCount) + 5)
-          .strength(0.5 * FORCE_STRENGTH)
-          .iterations(1) // Reduce collision iterations
-      )
-      .alpha(0.1) // Lower initial alpha for faster settling
-      .alphaDecay(1 - Math.pow(0.001, 1 / 150)) // Faster decay
-      .velocityDecay(0.6) // Higher velocity decay for stability
-      .on("tick", () => {
-        tickCount++
-        if (tickCount % 10 === 0) { // Update less frequently
-          setNodes([...seededNodes])
-        }
-      })
-      .on("end", () => setNodes([...seededNodes]))
+    // Run simulation asynchronously to avoid blocking the UI
+    setTimeout(() => {
+      // Create a simulation optimized for maximum speed
+      const simulation = d3
+        .forceSimulation(validNodes as any)
+        .randomSource(d3.randomLcg(1337))
+        .force("charge", d3.forceManyBody()
+          .strength(-50 * FORCE_STRENGTH) // Stronger forces for faster convergence
+          .theta(0.8) // Lower theta for more accuracy during fast sim
+        )
+        .force(
+          "link",
+          d3
+            .forceLink(d3Links as any)
+            .id((d: any) => d.id)
+            .distance(100)
+            .strength(0.2 * FORCE_STRENGTH) // Stronger link forces
+            .iterations(2) // More link iterations for stability
+        )
+        .force(
+          "collide",
+          d3
+            .forceCollide()
+            .radius((d: any) => getNodeRadius(d.videoCount) + 5)
+            .strength(0.8 * FORCE_STRENGTH) // Stronger collision
+            .iterations(2) // More collision iterations
+        )
+        .alpha(0.8) // Higher initial alpha
+        .alphaDecay(1 - Math.pow(0.001, 1 / 200)) // Faster decay
+        .velocityDecay(0.7) // Higher velocity decay for stability
+        .stop() // Don't start automatically
 
-    simRef.current = simulation
-    return () => void simulation.stop()
-  }, [seededNodes, links])
+      // Run simulation to completion as fast as possible
+      for (let i = 0; i < SIMULATION_ITERATIONS; ++i) {
+        simulation.tick()
+        if (simulation.alpha() < 0.005) break // Stop early if converged
+      }
 
-  // Setup zoom behavior
-  useEffect(() => {
-    if (!svgRef.current) return
-
-    const svg = d3.select(svgRef.current)
-    const zoom = d3.zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.1, 5])
-      .filter((event) => {
-        // Allow wheel events for zooming
-        if (event.type === 'wheel') return true
-        // For pan events (mousedown, mousemove), check if we're over a topic
-        const target = event.target as Element
-        return !target.closest('.cursor-pointer')
-      })
-      .on('zoom', (event) => {
-        setTransform(event.transform)
-      })
-
-    svg.call(zoom)
-
-    // Set initial zoom to fit content when nodes are loaded
-    if (nodes.length > 0) {
-      const pad = 40
-      const xs = nodes.map(n => n.x ?? 0)
-      const ys = nodes.map(n => n.y ?? 0)
-      const minX = Math.min(...xs) - pad
-      const maxX = Math.max(...xs) + pad
-      const minY = Math.min(...ys) - pad
-      const maxY = Math.max(...ys) + pad
+      // Store final positions and mark as complete
+      const finalPositions = validNodes.map(n => ({ ...n, x: n.x || 0, y: n.y || 0 }))
       
-      const width = 800
-      const height = 500
-      const dx = maxX - minX
-      const dy = maxY - minY
-      const x = (minX + maxX) / 2
-      const y = (minY + maxY) / 2
-      const scale = Math.min(width / dx, height / dy) * 0.9
-      
-      const initialTransform = d3.zoomIdentity
-        .translate(width / 2, height / 2)
-        .scale(scale)
-        .translate(-x, -y)
-      
-      svg.transition()
-        .duration(750)
-        .call(zoom.transform, initialTransform)
-    }
+      // Update state
+      setFinalNodes(finalPositions)
+      setIsSimulationComplete(true)
+      setIsSimulationRunning(false)
 
-    return () => {
-      svg.on('.zoom', null)
-    }
-  }, [nodes])
+      // Clean up
+      simulation.stop()
+    }, 10) // Small delay to allow UI to update with loading state
 
-  const byId = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes])
-  
-  // Get connected node IDs for the selected topic
+  }, [seededNodes, filteredRelationships])
+
+
+  // Get connected node IDs for the selected topic (moved back to useMemo for React rendering)
   const connectedNodeIds = useMemo(() => {
     if (!selectedTopic) return new Set<number>()
     
@@ -456,6 +423,52 @@ export default function TopicForceGraph({
     })
     return connected
   }, [selectedTopic, filteredRelationships])
+
+  // Center the view when simulation is complete (initial zoom only)
+  useEffect(() => {
+    if (!svgRef.current || !gRef.current || !isSimulationComplete || !finalNodes.length) return
+
+    const svg = d3.select(svgRef.current)
+    const g = d3.select(gRef.current)
+
+    // Set initial zoom to fit content
+    const pad = 40
+    const xs = finalNodes.map(n => n.x!)
+    const ys = finalNodes.map(n => n.y!)
+    const minX = Math.min(...xs) - pad
+    const maxX = Math.max(...xs) + pad
+    const minY = Math.min(...ys) - pad
+    const maxY = Math.max(...ys) + pad
+    
+    // Get actual SVG dimensions
+    const rect = svgRef.current.getBoundingClientRect()
+    const width = rect.width || 800
+    const height = rect.height || 500
+    
+    const dx = maxX - minX
+    const dy = maxY - minY
+    
+    // Prevent division by zero
+    if (dx === 0 || dy === 0) return
+    
+    const x = (minX + maxX) / 2
+    const y = (minY + maxY) / 2
+    const scale = Math.min(width / dx, height / dy) * 0.9
+    
+    // Ensure scale is valid
+    if (!isFinite(scale) || scale <= 0) return
+    
+    const initialTransform = d3.zoomIdentity
+      .translate(width / 2, height / 2)
+      .scale(scale)
+      .translate(-x, -y)
+    
+    // Apply the transform directly without zoom behavior
+    g.attr('transform', initialTransform.toString())
+  }, [isSimulationComplete, finalNodes])
+
+
+  const byId = useMemo(() => new Map(finalNodes.map(n => [n.id, n])), [finalNodes])
 
   const pathFor = (a: Topic, b: Topic) => {
     const mx = ((a.x ?? 0) + (b.x ?? 0)) / 2
@@ -475,13 +488,14 @@ export default function TopicForceGraph({
   }
 
   const getVideoUrl = (video: Video) => {
-    if (video.videoUrl) return video.videoUrl
-    if (video.platform === 'youtube') return `https://www.youtube.com/watch?v=${video.id}`
     if (video.platform === 'instagram') {
-      // For Instagram, use shortCode if available, otherwise use id
-      const identifier = video.id
-      return `https://www.instagram.com/p/${identifier}/`
+      // For Instagram, always use the public reel link instead of rotating video URLs
+      // Extract shortCode from the id (remove 'ig_' prefix) or use shortCode field if available
+      const shortCode = video.shortCode || (video.id.startsWith('ig_') ? video.id.substring(3) : video.id)
+      return `https://www.instagram.com/p/${shortCode}/`
     }
+    if (video.platform === 'youtube') return `https://www.youtube.com/watch?v=${video.id}`
+    if (video.videoUrl) return video.videoUrl
     return null
   }
 
@@ -516,6 +530,13 @@ export default function TopicForceGraph({
     }
   }
 
+  const handleChannelClick = (video: Video, event: React.MouseEvent) => {
+    event.stopPropagation() // Prevent video click
+    if (video.channelId) {
+      router.push(`/dashboard/${video.channelId}`)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <Card className="h-[600px]">
@@ -525,91 +546,220 @@ export default function TopicForceGraph({
             Topic Relationship Network
           </CardTitle>
           <CardDescription>
-            Use mouse wheel or trackpad to zoom, drag to pan
+            Click nodes to explore topic relationships and view related videos
           </CardDescription>
         </CardHeader>
         <CardContent className="h-full p-0">
-          <div className="relative w-full h-[500px] bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg overflow-hidden">
-            <svg 
-              ref={svgRef}
-              width="100%" 
-              height="100%" 
-              viewBox="0 0 800 500" 
-              className="absolute inset-0 cursor-grab active:cursor-grabbing"
-            >
-              <g transform={transform.toString()}>
-                {/* Links */}
-                {filteredRelationships.map((rel, i) => {
-                  const a = byId.get(rel.source),
-                    b = byId.get(rel.target)
-                  if (!a || !b) return null
-                  
-                  const strength = rel.strength || 0
-                  const strokeWidth = Math.max(0.5, Math.min(3, 0.5 + strength * 4))
-                  const opacity = Math.max(0.2, Math.min(0.8, 0.3 + strength * 0.7))
-                  
-                  // Check if this connection involves the selected topic
-                  const isConnectedToSelected = selectedTopic && (rel.source === selectedTopic || rel.target === selectedTopic)
-                  
-                  return (
-                    <path
-                      key={i}
-                      d={pathFor(a, b)}
-                      stroke={isConnectedToSelected ? "#3b82f6" : "#64748b"}
-                      strokeWidth={isConnectedToSelected ? strokeWidth + 2 : strokeWidth}
-                      strokeOpacity={isConnectedToSelected ? 1 : opacity}
-                      fill="none"
-                      style={{
-                        filter: isConnectedToSelected 
-                          ? "drop-shadow(0 0 4px rgba(59, 130, 246, 0.6))" 
-                          : "none"
-                      }}
-                    />
-                  )
-                })}
-
-                {/* Nodes */}
-                {nodes.map(n => {
-                  const size = getNodeSize(n.videoCount)
-                  const r = size / 2
-                  const selected = selectedTopic === n.id
-                  const connected = connectedNodeIds.has(n.id)
-                  
-                  let filter = "drop-shadow(0 2px 4px rgba(0,0,0,0.1))"
-                  if (selected) {
-                    filter = "drop-shadow(0 0 10px rgba(255, 215, 0, 0.6)) drop-shadow(0 0 4px rgba(255, 165, 0, 0.8))" // Moderate golden glow for selected
-                  } else if (connected) {
-                    filter = "drop-shadow(0 0 8px rgba(59, 130, 246, 0.5)) drop-shadow(0 0 3px rgba(59, 130, 246, 0.7))" // Moderate blue glow for connected
+          <div className="relative w-full h-[500px] bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-lg overflow-hidden">
+            {isSimulationRunning ? (
+              // Loading spinner while simulation runs
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto mb-4"></div>
+                  <p className="text-white text-sm">Rendering graph...</p>
+                </div>
+              </div>
+            ) : isSimulationComplete ? (
+              // Static graph after simulation completes
+              <svg 
+                ref={svgRef}
+                width="100%" 
+                height="100%" 
+                viewBox="0 0 800 500" 
+                className="absolute inset-0"
+                onClick={(e) => {
+                  // Only deselect if clicking the background (not a node)
+                  if (e.target === e.currentTarget || (e.target as Element).tagName === 'rect') {
+                    onTopicSelect(null)
                   }
+                }}
+              >
+                <defs>
+                  {/* Background pattern */}
+                  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(148, 163, 184, 0.1)" strokeWidth="1"/>
+                  </pattern>
                   
-                  return (
-                    <g
-                      key={n.id}
-                      className="cursor-pointer"
-                      onClick={() => onTopicSelect(selected ? null : n.id)}
-                    >
+                  {/* Simple gradients for performance */}
+                  <radialGradient id="nodeGradient">
+                    <stop offset="0%" stopColor="currentColor" stopOpacity="0.9" />
+                    <stop offset="100%" stopColor="currentColor" stopOpacity="0.7" />
+                  </radialGradient>
+                </defs>
+                
+                {/* Background grid */}
+                <rect width="100%" height="100%" fill="url(#grid)" opacity="0.3" />
+                
+                <g ref={gRef} style={{ willChange: 'transform' }}>
+                  {/* Links */}
+                  {filteredRelationships.map((rel, i) => {
+                    const a = byId.get(rel.source),
+                      b = byId.get(rel.target)
+                    if (!a || !b) return null
+                    
+                    const strength = rel.strength || 0
+                    const strokeWidth = Math.max(1, Math.min(4, 1 + strength * 3))
+                    const opacity = Math.max(0.3, Math.min(0.9, 0.4 + strength * 0.6))
+                    
+                    // Check if this connection involves the selected topic
+                    const isConnectedToSelected = selectedTopic && (rel.source === selectedTopic || rel.target === selectedTopic)
+                    
+                    // Hide non-connected links when a topic is selected
+                    if (selectedTopic && !isConnectedToSelected) {
+                      return null
+                    }
+                    
+                    return (
+                      <path
+                        key={i}
+                        className="link-path"
+                        d={pathFor(a, b)}
+                        stroke={isConnectedToSelected ? "#60a5fa" : "#94a3b8"}
+                        strokeWidth={isConnectedToSelected ? strokeWidth + 1 : strokeWidth * 0.5}
+                        strokeOpacity={isConnectedToSelected ? 1 : opacity}
+                        fill="none"
+                        strokeLinecap="round"
+                        style={{
+                          transition: "stroke 0.2s ease, stroke-width 0.2s ease, stroke-opacity 0.2s ease"
+                        }}
+                      />
+                    )
+                  })}
+
+                  {/* Nodes */}
+                  {finalNodes.map(n => {
+                    const size = getNodeSize(n.videoCount)
+                    const r = size / 2
+                    const selected = selectedTopic === n.id
+                    const connected = connectedNodeIds.has(n.id)
+                    const dimmed = selectedTopic && !selected && !connected
+                    const colors = getMultiplierColor(n.engagementMultiplier)
+                    
+                    let strokeColor = colors.primary
+                    let strokeWidth = 2
+                    
+                    if (selected) {
+                      strokeColor = "#fbbf24"
+                      strokeWidth = 3
+                    } else if (connected) {
+                      strokeColor = "#60a5fa"
+                      strokeWidth = 2.5
+                    }
+                    
+                    return (
+                      <g
+                        key={n.id}
+                        className="cursor-pointer node-group"
+                        onClick={(e) => {
+                          e.stopPropagation() // Prevent background click
+                          onTopicSelect(selected ? null : n.id)
+                        }}
+                        style={{
+                          transformOrigin: `${n.x ?? 0}px ${n.y ?? 0}px`,
+                          transition: "transform 0.2s ease, opacity 0.2s ease",
+                          willChange: "transform",
+                          opacity: dimmed ? 0.4 : 1
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = "scale(1.1)"
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = "scale(1)"
+                        }}
+                      >
+                      {/* Simplified outer ring for selected/connected nodes */}
+                      {(selected || connected) && (
+                        <circle
+                          cx={n.x}
+                          cy={n.y}
+                          r={r + 4}
+                          fill="none"
+                          stroke={selected ? "#fbbf24" : "#60a5fa"}
+                          strokeWidth="2"
+                          strokeOpacity="0.5"
+                        />
+                      )}
+                      
+                      {/* Main node circle */}
                       <circle
                         cx={n.x}
                         cy={n.y}
                         r={r}
-                        className={`${getMultiplierColor(n.engagementMultiplier)}`}
-                        style={{ filter }}
+                        fill={colors.primary}
+                        stroke={strokeColor}
+                        strokeWidth={strokeWidth}
                       />
+                      
+                      {/* Video count indicator - only for selected/connected nodes */}
+                      {(selected || connected) && (
+                        <>
+                          <circle
+                            cx={(n.x ?? 0) + r * 0.6}
+                            cy={(n.y ?? 0) - r * 0.6}
+                            r={Math.min(r * 0.3, 6)}
+                            fill="#1f2937"
+                            stroke="#f3f4f6"
+                            strokeWidth="1"
+                            style={{ pointerEvents: "none" }}
+                          />
+                          <text
+                            x={(n.x ?? 0) + r * 0.6}
+                            y={(n.y ?? 0) - r * 0.6}
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                            className="fill-white font-bold pointer-events-none select-none"
+                            style={{ fontSize: `${Math.max(5, r * 0.25)}px` }}
+                          >
+                            {n.videoCount}
+                          </text>
+                        </>
+                      )}
+                      
+                      {/* Main topic text */}
                       <text
-                        x={n.x}
-                        y={n.y}
+                        x={n.x ?? 0}
+                        y={n.y ?? 0}
                         textAnchor="middle"
                         dominantBaseline="middle"
-                        className="fill-gray-800 font-bold pointer-events-none select-none"
-                        style={{ fontSize: `${Math.max(8, size / 6)}px` }}
+                        className="fill-white font-bold pointer-events-none select-none"
+                        style={{ 
+                          fontSize: `${Math.max(8, size / 8)}px`,
+                          textShadow: "0 1px 2px rgba(0,0,0,0.8)",
+                          transform: (selected || connected) ? 'translateY(-4px)' : 'none'
+                        }}
                       >
                         {n.topic}
                       </text>
+                      
+                      {/* Engagement multiplier - only for selected/connected nodes */}
+                      {(selected || connected) && (
+                        <text
+                          x={n.x ?? 0}
+                          y={(n.y ?? 0) + 6}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          className="fill-yellow-300 font-medium pointer-events-none select-none"
+                          style={{ 
+                            fontSize: `${Math.max(6, size / 10)}px`,
+                            textShadow: "0 1px 2px rgba(0,0,0,0.9)"
+                          }}
+                        >
+                          {n.engagementMultiplier.toFixed(2)}x
+                        </text>
+                      )}
                     </g>
                   )
-                })}
-              </g>
-            </svg>
+                  })}
+                </g>
+              </svg>
+            ) : (
+              // Initial state before simulation starts
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="text-center">
+                  <div className="text-white text-sm">Preparing visualization...</div>
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -623,7 +773,7 @@ export default function TopicForceGraph({
               Top Videos for "{inputTopics.find(t => t.id === selectedTopic)?.topic}"
             </CardTitle>
             <CardDescription>
-              Click on any video to open it in a new tab
+              Click video titles or external link icon to open videos. Click channel names to view their dashboard.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -637,8 +787,7 @@ export default function TopicForceGraph({
                 {selectedTopicVideos.map((video) => (
                   <div
                     key={video.id}
-                    onClick={() => handleVideoClick(video)}
-                    className="group p-4 border rounded-lg hover:shadow-md transition-all cursor-pointer hover:border-blue-300"
+                    className="group p-4 border rounded-lg hover:shadow-md transition-all hover:border-blue-300"
                   >
                     <div className="flex items-start gap-3">
                       <div className={`bg-gray-100 rounded overflow-hidden flex-shrink-0 ${
@@ -654,9 +803,21 @@ export default function TopicForceGraph({
                         />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-medium text-sm line-clamp-2 group-hover:text-blue-600">
+                        <h4 
+                          onClick={() => handleVideoClick(video)}
+                          className="font-medium text-sm line-clamp-2 group-hover:text-blue-600 cursor-pointer hover:underline"
+                        >
                           {video.title}
                         </h4>
+                        {video.channelTitle && (
+                          <div 
+                            onClick={(e) => handleChannelClick(video, e)}
+                            className="flex items-center gap-1 mt-1 text-xs text-muted-foreground hover:text-blue-600 cursor-pointer hover:underline w-fit"
+                          >
+                            <User className="h-3 w-3" />
+                            <span className="truncate">{video.channelTitle}</span>
+                          </div>
+                        )}
                         <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                           <div className="flex items-center gap-1">
                             <Eye className="h-3 w-3" />
@@ -675,7 +836,12 @@ export default function TopicForceGraph({
                           <Badge variant="outline" className="text-xs">
                             {video.platform === 'youtube' ? 'YouTube' : 'Instagram'}
                           </Badge>
-                          <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-blue-600" />
+                          <div 
+                            onClick={() => handleVideoClick(video)}
+                            className="cursor-pointer hover:text-blue-600"
+                          >
+                            <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-blue-600" />
+                          </div>
                         </div>
                       </div>
                     </div>

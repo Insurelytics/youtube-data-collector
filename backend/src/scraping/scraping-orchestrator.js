@@ -1,7 +1,8 @@
 import { downloadImage, getLocalImageUrl } from '../video_processing/image-utils.js';
-import { processVideo, getWordsFromAudio } from '../video_processing/video-utils.js';
-import { upsertVideos, updateEngagementMetrics, getExistingVideoIds, extractAndAssociateHashtags, associateAITopicsWithVideo } from '../database/index.js';
+import { downloadAndExtractAudio, transcribeStoredAudio, processVideo, getWordsFromAudio } from '../video_processing/video-utils.js';
+import { upsertVideos, updateEngagementMetrics, getExistingVideoIds, extractAndAssociateHashtags, associateAITopicsWithVideo, updateAudioProcessingStatus, updateTranscriptionStatus, getVideosNeedingAudioProcessing, getVideosNeedingTranscription } from '../database/index.js';
 import { inferTopicsFromTranscription } from '../topics/inferTopics.js';
+import { batchTranscribe, batchInferTopics } from '../utils/batch-processor.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,101 +38,131 @@ export async function performInitialScraping(videos, platform, progressCallback 
     }
   }
   
-  // Process videos (download, extract audio, filter silence, and transcribe)
+  // Store videos first (without audio processing)
+  upsertVideos(videos);
+  
+  // Phase 1: Download videos and extract audio
   const videosWithAudio = videos.filter(v => v.videoUrl);
   
-  for (let i = 0; i < videos.length; i++) {
-    const video = videos[i];
+  for (let i = 0; i < videosWithAudio.length; i++) {
+    const video = videosWithAudio[i];
     try {
-      if (video.videoUrl) {
-        // Update progress for transcription step
-        if (progressCallback) {
-          progressCallback('Transcribing audio', videosProcessed + 1, videosWithAudio.length);
-        }
-        
-        console.log(`Processing video ${video.id} for audio and transcription...`);
-        const audioPath = await processVideo(video.videoUrl, video.id, platform);
-        
-        // Transcribe the filtered audio (usually better quality)
-        let transcription = null;
-        try {
-          transcription = await getWordsFromAudio(audioPath);
-          console.log(`Transcription completed for ${video.id}`);
-        } catch (transcriptionError) {
-          console.error(`Failed to transcribe video ${video.id}:`, transcriptionError.message);
-        }
-        
-        video.transcription = transcription;        
-        // Clean up audio files after transcription
-        try {
-          if (fs.existsSync(audioPath)) {
-            fs.unlinkSync(audioPath);
-            console.log(`Cleaned up original audio: ${audioPath}`);
-          }
-        } catch (cleanupError) {
-          console.error(`Failed to clean up audio files for ${video.id}:`, cleanupError.message);
-        }
-        
-        videosProcessed++;
+      if (progressCallback) {
+        progressCallback('Downloading and extracting audio', i + 1, videosWithAudio.length);
       }
-    } catch (error) {
-      console.error(`Failed to process video ${video.id}:`, error);
-      video.audioProcessing = { error: error.message };
-      video.transcription = null;
       
-      // Still try to clean up any audio files that might have been created
-      try {
-        const audioDir = path.join(__dirname, '../../temp/audio');
-        const originalAudioPath = path.join(audioDir, `${video.id}_original.wav`);
-        const filteredAudioPath = path.join(audioDir, `${video.id}_filtered.wav`);
-        
-        if (fs.existsSync(originalAudioPath)) {
-          fs.unlinkSync(originalAudioPath);
-          console.log(`Cleaned up original audio after error: ${originalAudioPath}`);
-        }
-        if (fs.existsSync(filteredAudioPath)) {
-          fs.unlinkSync(filteredAudioPath);
-          console.log(`Cleaned up filtered audio after error: ${filteredAudioPath}`);
-        }
-      } catch (cleanupError) {
-        console.error(`Failed to clean up audio files after error for ${video.id}:`, cleanupError.message);
+      console.log(`Downloading and extracting audio for ${video.id}...`);
+      const audioPath = await downloadAndExtractAudio(video.videoUrl, video.id, platform);
+      
+      // Update database with audio path
+      updateAudioProcessingStatus(video.id, audioPath, 'audio_ready');
+      console.log(`Audio processing completed for ${video.id}: ${audioPath}`);
+      
+      videosProcessed++;
+    } catch (error) {
+      console.error(`Failed to process audio for video ${video.id}:`, error);
+      
+      // Handle videos with no audio stream specifically
+      if (error.message.includes('Video has no audio stream')) {
+        updateAudioProcessingStatus(video.id, null, 'no_audio');
+        console.log(`Video ${video.id} has no audio stream - skipping audio processing`);
+      } else {
+        updateAudioProcessingStatus(video.id, null, 'audio_failed');
       }
     }
   }
   
-  // Infer topics for videos with transcriptions
+  // Phase 2: Transcribe stored audio files in batches
+  const videosForTranscription = videosWithAudio.filter(v => v.videoUrl); // All videos that had audio
+  
+  if (videosForTranscription.length > 0) {
+    // Prepare audio items for batch processing
+    const audioItems = [];
+    const audioDir = path.join(__dirname, '../../temp/audio');
+    
+    for (const video of videosForTranscription) {
+      const audioPath = path.join(audioDir, `${video.id}_original.wav`);
+      if (fs.existsSync(audioPath)) {
+        audioItems.push({ audioPath, videoId: video.id });
+      } else {
+        console.warn(`Audio file not found for ${video.id}, skipping transcription`);
+        updateTranscriptionStatus(video.id, null, 'audio_missing');
+      }
+    }
+    
+    if (audioItems.length > 0) {
+      // Process transcriptions in batches
+      const transcriptionResults = await batchTranscribe(
+        audioItems,
+        getWordsFromAudio,
+        progressCallback ? (current, total) => progressCallback('Transcribing audio', current, total) : null
+      );
+      
+      // Update database and video objects with results
+      transcriptionResults.forEach((result, index) => {
+        if (result) {
+          const { videoId, transcription } = result;
+          const video = videosForTranscription.find(v => v.id === videoId);
+          
+          if (video) {
+            updateTranscriptionStatus(videoId, transcription, 'completed');
+            video.transcription = transcription; // Keep in memory for topic inference
+          }
+        } else {
+          // Failed transcription
+          const { videoId } = audioItems[index];
+          const video = videosForTranscription.find(v => v.id === videoId);
+          
+          if (video) {
+            updateTranscriptionStatus(videoId, null, 'transcription_failed');
+            video.transcription = null;
+          }
+        }
+      });
+    }
+  }
+  
+  // Infer topics for videos with transcriptions in batches
   const videosWithTranscriptions = videos.filter(v => v.transcription);
   if (videosWithTranscriptions.length > 0) {
-    for (let i = 0; i < videosWithTranscriptions.length; i++) {
-      const video = videosWithTranscriptions[i];
-      try {
-        if (progressCallback) {
-          progressCallback('Inferring video topics', i + 1, videosWithTranscriptions.length);
-        }
+    // Prepare video items for batch topic inference
+    const videoItems = videosWithTranscriptions.map(video => ({
+      transcription: video.transcription,
+      title: video.title || '',
+      description: video.description || '',
+      videoId: video.id,
+      platform
+    }));
+    
+    // Process topic inference in batches
+    const topicResults = await batchInferTopics(
+      videoItems,
+      inferTopicsFromTranscription,
+      progressCallback ? (current, total) => progressCallback('Inferring video topics', current, total) : null
+    );
+    
+    // Update video objects with results
+    topicResults.forEach((result, index) => {
+      const video = videosWithTranscriptions[index];
+      
+      if (result && result.topics) {
+        const { topics } = result;
         
-        console.log(`Inferring topics for video ${video.id}...`);
-        const inferredHashtags = await inferTopicsFromTranscription(
-          video.transcription, 
-          video.title || '', 
-          video.description || '', 
-          platform
-        );
-        
-        if (inferredHashtags && inferredHashtags.length > 0) {
-          console.log(`Inferred ${inferredHashtags.length} topics for ${video.id}:`, inferredHashtags);
+        if (topics && topics.length > 0) {
+          console.log(`Inferred ${topics.length} topics for ${video.id}:`, topics);
         } else {
           console.log(`No topics could be inferred for video ${video.id}`);
         }
         
-        video.inferredTopics = inferredHashtags;
-      } catch (error) {
-        console.error(`Failed to infer topics for video ${video.id}:`, error.message);
+        video.inferredTopics = topics;
+      } else {
+        console.error(`Failed to infer topics for video ${video.id}`);
         video.inferredTopics = [];
       }
-    }
+    });
   }
   
-  // Store all video data (includes engagement metrics)
+  // Update videos with final state (transcriptions were already updated in database)
   upsertVideos(videos);
   
   // Associate inferred topics after videos are stored
@@ -231,4 +262,108 @@ export async function performSmartScraping(allVideos, platform, progressCallback
   console.log(`Smart scraping completed:`, totalResults);
   
   return totalResults;
+}
+
+/**
+ * Process pending audio downloads for videos that need it
+ */
+export async function processAudioDownloads(progressCallback = null) {
+  console.log('Starting audio download processing...');
+  
+  const videosNeedingAudio = getVideosNeedingAudioProcessing();
+  
+  if (videosNeedingAudio.length === 0) {
+    console.log('No videos need audio processing');
+    return { processed: 0 };
+  }
+  
+  console.log(`Found ${videosNeedingAudio.length} videos needing audio processing`);
+  let processed = 0;
+  
+  for (let i = 0; i < videosNeedingAudio.length; i++) {
+    const video = videosNeedingAudio[i];
+    
+    try {
+      if (progressCallback) {
+        progressCallback('Downloading and extracting audio', i + 1, videosNeedingAudio.length);
+      }
+      
+      console.log(`Processing audio for ${video.id}...`);
+      const audioPath = await downloadAndExtractAudio(video.videoUrl, video.id, video.platform);
+      
+      updateAudioProcessingStatus(video.id, audioPath, 'audio_ready');
+      console.log(`Audio processing completed for ${video.id}: ${audioPath}`);
+      processed++;
+      
+    } catch (error) {
+      console.error(`Failed to process audio for video ${video.id}:`, error);
+      
+      // Handle videos with no audio stream specifically
+      if (error.message.includes('Video has no audio stream')) {
+        updateAudioProcessingStatus(video.id, null, 'no_audio');
+        console.log(`Video ${video.id} has no audio stream - skipping audio processing`);
+      } else {
+        updateAudioProcessingStatus(video.id, null, 'audio_failed');
+      }
+    }
+  }
+  
+  console.log(`Audio download processing completed: ${processed}/${videosNeedingAudio.length} videos processed`);
+  return { processed, total: videosNeedingAudio.length };
+}
+
+/**
+ * Process pending transcriptions for videos that have audio ready
+ */
+export async function processTranscriptions(progressCallback = null) {
+  console.log('Starting transcription processing...');
+  
+  const videosNeedingTranscription = getVideosNeedingTranscription();
+  
+  if (videosNeedingTranscription.length === 0) {
+    console.log('No videos need transcription');
+    return { processed: 0 };
+  }
+  
+  console.log(`Found ${videosNeedingTranscription.length} videos needing transcription`);
+  
+  // Prepare audio items for batch processing, filtering out missing files
+  const audioItems = [];
+  for (const video of videosNeedingTranscription) {
+    if (!fs.existsSync(video.audioPath)) {
+      console.warn(`Audio file not found for ${video.id}: ${video.audioPath}`);
+      updateTranscriptionStatus(video.id, null, 'audio_missing');
+    } else {
+      audioItems.push({ audioPath: video.audioPath, videoId: video.id });
+    }
+  }
+  
+  if (audioItems.length === 0) {
+    console.log('No audio files available for transcription');
+    return { processed: 0, total: videosNeedingTranscription.length };
+  }
+  
+  // Process transcriptions in batches
+  const transcriptionResults = await batchTranscribe(
+    audioItems,
+    getWordsFromAudio,
+    progressCallback ? (current, total) => progressCallback('Transcribing audio', current, total) : null
+  );
+  
+  // Update database with results
+  let processed = 0;
+  transcriptionResults.forEach((result, index) => {
+    if (result) {
+      const { videoId, transcription } = result;
+      updateTranscriptionStatus(videoId, transcription, 'completed');
+      processed++;
+    } else {
+      // Failed transcription
+      const { videoId } = audioItems[index];
+      updateTranscriptionStatus(videoId, null, 'transcription_failed');
+    }
+  });
+  
+  console.log(`Transcription processing completed: ${processed}/${videosNeedingTranscription.length} videos processed`);
+  return { processed, total: videosNeedingTranscription.length };
 }

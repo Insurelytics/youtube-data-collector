@@ -95,7 +95,7 @@ export async function syncChannelReels({ handle, sinceDays }) {
     const reels = items.map(item => ({
       id: `ig_${item.shortCode}`, // Prefix with 'ig_' to avoid conflicts with YouTube IDs
       channelId,
-      title: item.caption || `Instagram post ${item.shortCode}`, // Instagram posts don't have separate titles
+      title: item.caption || 'Unnamed reel', // Instagram posts don't have separate titles
       description: item.caption || '',
       publishedAt: item.timestamp ? new Date(item.timestamp).toISOString() : new Date().toISOString(),
       durationSeconds: item.videoDuration || null,

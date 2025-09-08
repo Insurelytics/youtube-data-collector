@@ -1,13 +1,15 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
-import { execSync } from 'node:child_process';
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
 import OpenAI from "openai";
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 const openai = new OpenAI();
+const execAsync = promisify(exec);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,11 +25,97 @@ const AUDIO_DIR = path.join(__dirname, '../../temp/audio');
 });
 
 /**
+ * Downloads video, extracts audio, and stores it persistently
+ * @param {string} videoUrl - URL of the video to process
+ * @param {string} videoId - Unique identifier for the video
+ * @param {string} platform - Platform (youtube/instagram)
+ * @returns {string} - Path to the extracted audio file
+ */
+export async function downloadAndExtractAudio(videoUrl, videoId, platform) {
+  let videoPath = null;
+  let audioPath = null;
+  
+  try {
+    console.log(`Starting video download and audio extraction for ${videoId} from ${platform}...`);
+    
+    // Download video
+    videoPath = await downloadVideo(videoUrl, videoId, platform);
+    if (!videoPath) {
+      throw new Error('Failed to download video');
+    }
+    
+    // Extract original audio (keep it persistent)
+    try {
+      audioPath = await extractAudio(videoPath, videoId, 'original');
+    } catch (audioError) {
+      // Clean up video file
+      if (videoPath && fs.existsSync(videoPath)) {
+        // fs.unlinkSync(videoPath);
+        console.log(`Cleaned up video file: ${videoPath}`);
+      }
+      
+      // If the error is about no audio streams, throw a more specific error
+      if (audioError.message.includes('No audio streams found')) {
+        throw new Error('Video has no audio stream');
+      }
+      throw audioError;
+    }
+    
+    // Clean up video file to save space, keep audio
+    if (videoPath && fs.existsSync(videoPath)) {
+      fs.unlinkSync(videoPath);
+      console.log(`Cleaned up video file: ${videoPath}`);
+    }
+    
+    console.log(`Audio extraction completed for ${videoId}: ${audioPath}`);
+    return audioPath;
+    
+  } catch (error) {
+    console.error(`Error downloading and extracting audio for ${videoId}:`, error);
+    
+    // Clean up on error
+    if (videoPath && fs.existsSync(videoPath)) {
+      fs.unlinkSync(videoPath);
+    }
+    if (audioPath && fs.existsSync(audioPath)) {
+      fs.unlinkSync(audioPath);
+    }
+    
+    throw error;
+  }
+}
+
+/**
+ * Transcribes a stored audio file
+ * @param {string} audioPath - Path to the audio file
+ * @param {string} videoId - Video identifier for logging
+ * @returns {string} - Transcription text
+ */
+export async function transcribeStoredAudio(audioPath, videoId) {
+  try {
+    if (!fs.existsSync(audioPath)) {
+      throw new Error(`Audio file not found: ${audioPath}`);
+    }
+    
+    console.log(`Starting transcription for ${videoId}...`);
+    const transcription = await getWordsFromAudio(audioPath);
+    console.log(`Transcription completed for ${videoId}`);
+    
+    return transcription;
+    
+  } catch (error) {
+    console.error(`Error transcribing audio for ${videoId}:`, error);
+    throw error;
+  }
+}
+
+/**
  * Downloads video, extracts audio, filters silence, and returns duration difference
  * @param {string} videoUrl - URL of the video to process
  * @param {string} videoId - Unique identifier for the video
  * @param {string} platform - Platform (youtube/instagram)
  * @returns {Object} - Processing results including duration difference
+ * @deprecated Use downloadAndExtractAudio and transcribeStoredAudio separately
  */
 export async function processVideo(videoUrl, videoId, platform) {
   let videoPath = null;
@@ -92,7 +180,7 @@ async function downloadVideo(videoUrl, videoId, platform) {
     }
     
     console.log(`Downloading video: ${videoId}...`);
-    execSync(command, { stdio: 'pipe' });
+    await execAsync(command);
     
     // Find the actual downloaded file
     const files = fs.readdirSync(VIDEOS_DIR).filter(file => file.startsWith(videoId));
@@ -118,10 +206,22 @@ async function extractAudio(videoPath, videoId, suffix = '') {
     const audioFilename = suffix ? `${videoId}_${suffix}.wav` : `${videoId}.wav`;
     const audioPath = path.join(AUDIO_DIR, audioFilename);
     
+    // First check if video has audio streams
+    const probeCommand = `ffprobe -v quiet -select_streams a -show_entries stream=codec_type -of csv=p=0 "${videoPath}"`;
+    
+    try {
+      const { stdout: probeOutput } = await execAsync(probeCommand);
+      if (!probeOutput.trim()) {
+        throw new Error('No audio streams found in video');
+      }
+    } catch (probeError) {
+      throw new Error('No audio streams found in video');
+    }
+    
     const command = `ffmpeg -i "${videoPath}" -vn -acodec pcm_s16le -ar 44100 -ac 2 "${audioPath}" -y`;
     
     console.log(`Extracting audio: ${audioFilename}...`);
-    execSync(command, { stdio: 'pipe' });
+    await execAsync(command);
     console.log(`Audio extracted: ${audioPath}`);
     
     return audioPath;
@@ -140,7 +240,7 @@ async function filterSilence(originalAudioPath, videoId) {
     
     // First, detect silence periods
     const silenceDetectCommand = `ffmpeg -i "${originalAudioPath}" -af silencedetect=noise=-30dB:duration=0.5 -f null - 2>&1`;
-    const silenceOutput = execSync(silenceDetectCommand, { encoding: 'utf8' });
+    const { stdout: silenceOutput } = await execAsync(silenceDetectCommand);
     
     // Parse silence periods
     const silenceRanges = parseSilenceOutput(silenceOutput);
@@ -167,7 +267,7 @@ async function filterSilence(originalAudioPath, videoId) {
     const command = `ffmpeg -i "${originalAudioPath}" -filter_complex "${filterComplex}" "${filteredAudioPath}" -y`;
     
     console.log(`Filtering silence from audio: ${videoId}...`);
-    execSync(command, { stdio: 'pipe' });
+    await execAsync(command);
     console.log(`Silence filtered: ${filteredAudioPath}`);
     
     return filteredAudioPath;
@@ -183,7 +283,7 @@ async function filterSilence(originalAudioPath, videoId) {
 async function getAudioDuration(audioPath) {
   try {
     const command = `ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${audioPath}"`;
-    const output = execSync(command, { encoding: 'utf8' });
+    const { stdout: output } = await execAsync(command);
     return parseFloat(output.trim());
   } catch (error) {
     console.error(`Error getting duration of ${audioPath}:`, error);

@@ -25,7 +25,9 @@ import {
   getSettings, 
   getTopicStats, 
   getVideosByTopic, 
-  cleanupOrphanedRunningJobs
+  cleanupOrphanedRunningJobs,
+  getVideosNeedingAudioProcessing,
+  getVideosNeedingTranscription
 } from './database/index.js';
 import { getTopicRanking, getTopicGraph } from './topics/topic-math.js';
 
@@ -33,6 +35,7 @@ import { getChannelByHandle as getYouTubeChannelByHandle } from './scraping/yout
 import { getChannelByHandle as getInstagramChannelByHandle } from './scraping/instagram.js';
 import QueueManager from './scraping/queue-manager.js';
 import { initScheduler, triggerScheduledSync } from './scraping/schedule.js';
+import { processAudioDownloads, processTranscriptions } from './scraping/scraping-orchestrator.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -422,6 +425,53 @@ function createServer() {
     } catch (error) {
       console.error('Error in /api/topics/graph:', error);
       res.status(500).json({ error: error.message || 'Failed to fetch topic graph' });
+    }
+  });
+
+  // Audio processing API endpoints
+  app.get('/api/audio/status', (req, res) => {
+    try {
+      const videosNeedingAudio = getVideosNeedingAudioProcessing();
+      const videosNeedingTranscription = getVideosNeedingTranscription();
+      
+      res.json({
+        videosNeedingAudio: videosNeedingAudio.length,
+        videosNeedingTranscription: videosNeedingTranscription.length,
+        pendingAudio: videosNeedingAudio,
+        pendingTranscription: videosNeedingTranscription
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message || 'Failed to fetch audio status' });
+    }
+  });
+
+  app.post('/api/audio/process', async (req, res) => {
+    try {
+      console.log('Starting audio processing...');
+      const result = await processAudioDownloads();
+      res.json({ 
+        ok: true, 
+        message: `Audio processing completed: ${result.processed}/${result.total} videos processed`,
+        ...result
+      });
+    } catch (error) {
+      console.error('Error in audio processing:', error);
+      res.status(500).json({ error: error.message || 'Failed to process audio' });
+    }
+  });
+
+  app.post('/api/transcriptions/process', async (req, res) => {
+    try {
+      console.log('Starting transcription processing...');
+      const result = await processTranscriptions();
+      res.json({ 
+        ok: true, 
+        message: `Transcription processing completed: ${result.processed}/${result.total} videos processed`,
+        ...result
+      });
+    } catch (error) {
+      console.error('Error in transcription processing:', error);
+      res.status(500).json({ error: error.message || 'Failed to process transcriptions' });
     }
   });
 

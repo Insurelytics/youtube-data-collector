@@ -27,12 +27,34 @@ export function initVideosSchema() {
       mentions TEXT,
       takenAtTimestamp INTEGER,
       transcription TEXT,
+      audioPath TEXT,
+      audioProcessedAt TEXT,
+      transcriptionStatus TEXT DEFAULT 'pending',
       FOREIGN KEY(channelId) REFERENCES channels(id)
     );
 
     CREATE INDEX IF NOT EXISTS idx_videos_channel_date ON videos(channelId, publishedAt DESC);
     CREATE INDEX IF NOT EXISTS idx_videos_views ON videos(viewCount DESC);
   `);
+  
+  // Add missing columns to existing tables (migration)
+  try {
+    db.exec(`ALTER TABLE videos ADD COLUMN audioPath TEXT;`);
+  } catch (e) {
+    // Column already exists, ignore
+  }
+  
+  try {
+    db.exec(`ALTER TABLE videos ADD COLUMN audioProcessedAt TEXT;`);
+  } catch (e) {
+    // Column already exists, ignore
+  }
+  
+  try {
+    db.exec(`ALTER TABLE videos ADD COLUMN transcriptionStatus TEXT DEFAULT 'pending';`);
+  } catch (e) {
+    // Column already exists, ignore
+  }
 }
 
 export function upsertVideos(videos) {
@@ -42,11 +64,13 @@ export function upsertVideos(videos) {
     INSERT INTO videos (
       id, channelId, title, description, publishedAt, durationSeconds,
       viewCount, likeCount, commentCount, tags, thumbnails, raw, lastSyncedAt,
-      platform, shortCode, displayUrl, localImageUrl, videoUrl, dimensions, mentions, takenAtTimestamp, transcription
+      platform, shortCode, displayUrl, localImageUrl, videoUrl, dimensions, mentions, takenAtTimestamp, transcription,
+      audioPath, audioProcessedAt, transcriptionStatus
     ) VALUES (
       @id, @channelId, @title, @description, @publishedAt, @durationSeconds,
       @viewCount, @likeCount, @commentCount, @tags, @thumbnails, @raw, @lastSyncedAt,
-      @platform, @shortCode, @displayUrl, @localImageUrl, @videoUrl, @dimensions, @mentions, @takenAtTimestamp, @transcription
+      @platform, @shortCode, @displayUrl, @localImageUrl, @videoUrl, @dimensions, @mentions, @takenAtTimestamp, @transcription,
+      @audioPath, @audioProcessedAt, @transcriptionStatus
     )
     ON CONFLICT(id) DO UPDATE SET
       title=excluded.title,
@@ -68,7 +92,10 @@ export function upsertVideos(videos) {
       dimensions=excluded.dimensions,
       mentions=excluded.mentions,
       takenAtTimestamp=excluded.takenAtTimestamp,
-      transcription=excluded.transcription
+      transcription=excluded.transcription,
+      audioPath=excluded.audioPath,
+      audioProcessedAt=excluded.audioProcessedAt,
+      transcriptionStatus=excluded.transcriptionStatus
   `);
 
   const toRow = (v) => ({
@@ -94,6 +121,9 @@ export function upsertVideos(videos) {
     mentions: v.mentions ? JSON.stringify(v.mentions) : null,
     takenAtTimestamp: v.takenAtTimestamp || null,
     transcription: v.transcription || null,
+    audioPath: v.audioPath || null,
+    audioProcessedAt: v.audioProcessedAt || null,
+    transcriptionStatus: v.transcriptionStatus || 'pending',
   });
 
   const tx = db.transaction((all) => {
@@ -346,4 +376,52 @@ export function updateEngagementMetrics(videos) {
   });
   
   tx(videos);
+}
+
+export function getVideosNeedingAudioProcessing() {
+  const db = getDatabase();
+  return db.prepare(`
+    SELECT id, videoUrl, platform
+    FROM videos 
+    WHERE videoUrl IS NOT NULL 
+      AND audioPath IS NULL 
+      AND transcriptionStatus = 'pending'
+    ORDER BY publishedAt DESC
+  `).all();
+}
+
+export function getVideosNeedingTranscription() {
+  const db = getDatabase();
+  return db.prepare(`
+    SELECT id, audioPath, title, description
+    FROM videos 
+    WHERE audioPath IS NOT NULL 
+      AND transcription IS NULL 
+      AND transcriptionStatus IN ('audio_ready', 'pending')
+    ORDER BY audioProcessedAt DESC
+  `).all();
+}
+
+export function updateAudioProcessingStatus(videoId, audioPath, status = 'audio_ready') {
+  const db = getDatabase();
+  const nowIso = new Date().toISOString();
+  
+  db.prepare(`
+    UPDATE videos 
+    SET audioPath = ?, 
+        audioProcessedAt = ?, 
+        transcriptionStatus = ?
+    WHERE id = ?
+  `).run(audioPath, nowIso, status, videoId);
+}
+
+export function updateTranscriptionStatus(videoId, transcription, status = 'completed') {
+  const db = getDatabase();
+  
+  db.prepare(`
+    UPDATE videos 
+    SET transcription = ?, 
+        transcriptionStatus = ?
+    WHERE id = ?
+  `).run(transcription, status, videoId);
 }

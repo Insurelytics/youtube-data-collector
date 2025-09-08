@@ -32,7 +32,11 @@ export {
   identifyViralVideos,
   videoExists,
   getExistingVideoIds,
-  updateEngagementMetrics
+  updateEngagementMetrics,
+  getVideosNeedingAudioProcessing,
+  getVideosNeedingTranscription,
+  updateAudioProcessingStatus,
+  updateTranscriptionStatus
 } from './videos.js';
 
 // Import private video functions

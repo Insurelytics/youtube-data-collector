@@ -42,9 +42,13 @@ If it's impossible to come up with good hashtags, leave hashtags empty and set u
         console.log(`Unable to infer hashtags for video ${title} on ${platform}`);
         return [];
     }
-    // strip '#' from the front if it exists
-    result.hashtags = result.hashtags.map(hashtag => hashtag.startsWith('#') ? hashtag.substring(1) : hashtag);
-    result.generalHashtags = result.generalHashtags.map(hashtag => hashtag.startsWith('#') ? hashtag.substring(1) : hashtag);
-    const allHashtags = [...result.hashtags, ...result.generalHashtags];
+    
+    // Combine hashtags and generalHashtags
+    const allHashtags = [...result.hashtags, ...result.generalHashtags]
+        // strip all spaces, the '#' from the front if it exists, and make all lowercase
+        .map(tag => tag.replace(/\s+/g, '').replace(/^#/, '').toLowerCase())
+        // deduplicate
+        .filter((tag, index, array) => array.indexOf(tag) === index);
+
     return allHashtags;
 }

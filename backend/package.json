@@ -15,6 +15,7 @@
     "@instructor-ai/instructor": "^1.7.0",
     "apify-client": "^2.15.1",
     "better-sqlite3": "^12.2.0",
+    "d3": "^7.9.0",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "form-data": "^4.0.4",

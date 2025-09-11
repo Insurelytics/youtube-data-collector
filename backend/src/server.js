@@ -27,7 +27,10 @@ import {
   getVideosByTopic, 
   cleanupOrphanedRunningJobs,
   getVideosNeedingAudioProcessing,
-  getVideosNeedingTranscription
+  getVideosNeedingTranscription,
+  listSuggestedChannels,
+  getSuggestedChannelsBySearchTerm,
+  removeSuggestedChannel
 } from './database/index.js';
 import { getTopicRanking, getTopicGraph, CATEGORY_THRESHOLD } from './topics/topic-math.js';
 
@@ -206,6 +209,35 @@ function createServer() {
   app.delete('/api/channels/:id', (req, res) => {
     removeChannel(req.params.id);
     res.json({ ok: true });
+  });
+
+  // Suggested channels endpoints
+  app.get('/api/suggested-channels', (req, res) => {
+    try {
+      const searchTerm = req.query.searchTerm;
+      let channels;
+      
+      if (searchTerm) {
+        channels = getSuggestedChannelsBySearchTerm(searchTerm);
+      } else {
+        channels = listSuggestedChannels();
+      }
+      
+      res.json(channels);
+    } catch (error) {
+      console.error('Error fetching suggested channels:', error);
+      res.status(500).json({ error: 'Failed to fetch suggested channels' });
+    }
+  });
+
+  app.delete('/api/suggested-channels/:id', (req, res) => {
+    try {
+      removeSuggestedChannel(req.params.id);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error('Error removing suggested channel:', error);
+      res.status(500).json({ error: 'Failed to remove suggested channel' });
+    }
   });
 
   // Channel dashboard data

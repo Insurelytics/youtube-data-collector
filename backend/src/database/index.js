@@ -4,6 +4,7 @@ import { initVideosSchema } from './videos.js';
 import { initJobsSchema } from './jobs.js';
 import { initTopicsSchema } from './topics.js';
 import { initSettingsSchema } from './settings.js';
+import { initSuggestedChannelsSchema } from './suggested-channels.js';
 
 // Re-export all functions from individual modules
 export { ensureDatabase } from './connection.js';
@@ -86,6 +87,15 @@ export {
   getSettings
 } from './settings.js';
 
+// Suggested channels functions
+export {
+  upsertSuggestedChannel,
+  listSuggestedChannels,
+  getSuggestedChannelsBySearchTerm,
+  removeSuggestedChannel,
+  isChannelAlreadyTracked
+} from './suggested-channels.js';
+
 // Initialize all database schemas
 export function initializeDatabase() {
   ensureDatabase();
@@ -94,5 +104,6 @@ export function initializeDatabase() {
   initJobsSchema();
   initTopicsSchema();
   initSettingsSchema();
+  initSuggestedChannelsSchema();
   console.log('Database initialized with all schemas');
 }

@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { User, TrendingUp, Network, Settings, Clock, Play } from 'lucide-react'
+import { User, TrendingUp, Network, Settings, Clock, Play, Users } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { useJobs } from "@/hooks/useJobs"
 
@@ -15,6 +15,7 @@ export function Navigation() {
 
   const navItems = [
     { href: "/", label: "Channels", icon: User },
+    { href: "/suggested-channels", label: "Suggested Channels", icon: Users },
     { href: "/top-performing", label: "Top Performing", icon: TrendingUp },
     { href: "/connections-graph", label: "Connections Graph", icon: Network },
     { href: "/criteria", label: "Criteria", icon: Settings },

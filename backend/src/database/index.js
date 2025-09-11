@@ -77,7 +77,8 @@ export {
   getVideosNeedingAITopics,
   getVideoTopicsSummary,
   getAllTopics,
-  getAllVideoTopics
+  getAllVideoTopics,
+  getTopicIdByName
 } from './topics.js';
 
 // Settings functions
@@ -93,7 +94,8 @@ export {
   listSuggestedChannels,
   getSuggestedChannelsBySearchTerm,
   removeSuggestedChannel,
-  isChannelAlreadyTracked
+  isChannelAlreadyTracked,
+  getSearchedTopicIds
 } from './suggested-channels.js';
 
 // Initialize all database schemas

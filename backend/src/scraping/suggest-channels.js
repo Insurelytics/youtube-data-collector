@@ -2,7 +2,7 @@
 import { getTopicGraph } from '../topics/topic-math.js';
 import { findChannelsForAllSearchTerms } from './channel-finder.js';
 import { getChannelByHandle } from './instagram.js';
-import { upsertSuggestedChannel } from '../database/index.js';
+import { upsertSuggestedChannel, getSearchedTopicIds, getTopicIdByName } from '../database/index.js';
 import Instructor from "@instructor-ai/instructor";
 import OpenAI from "openai"
 import { z } from "zod"
@@ -36,14 +36,36 @@ const SearchTermsSchema = z.object({
 
 export async function suggestChannels() {
     // get topics defined as categories by topic math
-
     const { topics } = getTopicGraph(0, 1, TOPICS_TOFETCH); 
-    const categories = topics.filter(topic => topic.isCategory);
+    const allCategories = topics.filter(topic => topic.isCategory);
+    
+    // Get already searched topic IDs to avoid duplicates [[memory:8384501]]
+    const searchedTopicIds = getSearchedTopicIds();
+    console.log('Already searched topic IDs:', searchedTopicIds);
+    
+    // Filter out categories that have already been searched  
+    const categories = allCategories.filter(category => {
+        const topicId = getTopicIdByName(category.name);
+        return !searchedTopicIds.includes(topicId);
+    });
+    
+    console.log(`Found ${allCategories.length} total categories, ${categories.length} not yet searched`);
+    
+    if (categories.length === 0) {
+        console.log('No new categories to search - all have been processed');
+        return {
+            urlDiscovery: { foundUrls: [], successCount: 0, totalSearchTerms: 0 },
+            channelAnalysis: { successCount: 0, errorCount: 0, totalUrls: 0 },
+            totalFoundUrls: 0,
+            totalStoredChannels: 0
+        };
+    }
 
     // for each category, get the name, topics connected, and strength of those connections
     const categoryData = categories.map(category => {
         return {
             name: category.name,
+            id: getTopicIdByName(category.name),
             topics: category.connections.map(connection => ({
                 name: connection.topic.name,
                 strength: Number(connection.weight.toFixed(3))
@@ -52,8 +74,11 @@ export async function suggestChannels() {
     });
 
     console.log('Generating search terms for categories...');
-    let searchTerms = await generateSearchTerms(categoryData);
-    console.log(`Generated ${searchTerms.length} search terms:`, searchTerms);
+    let searchTermsWithTopics = await generateSearchTerms(categoryData);
+    console.log(`Generated ${searchTermsWithTopics.length} search terms:`, searchTermsWithTopics);
+    
+    // Extract just the search terms for the existing findChannelsForAllSearchTerms function
+    const searchTerms = searchTermsWithTopics.map(item => item.searchTerm);
     
     // Find channel URLs for all search terms
     console.log('Starting channel URL discovery process...');
@@ -64,7 +89,7 @@ export async function suggestChannels() {
     
     // Analyze and store the found channels
     console.log('Starting channel analysis and storage...');
-    const analysisResult = await analyzeAndStoreChannels(urlResult.foundUrls);
+    const analysisResult = await analyzeAndStoreChannels(urlResult.foundUrls, searchTermsWithTopics);
     
     console.log('Channel analysis completed!');
     console.log(`Analysis Results: ${analysisResult.successCount} channels analyzed and stored, ${analysisResult.errorCount} failed`);
@@ -77,8 +102,14 @@ export async function suggestChannels() {
     };
 }
 
-async function analyzeAndStoreChannels(foundUrls) {
+async function analyzeAndStoreChannels(foundUrls, searchTermsWithTopics) {
     console.log(`Analyzing ${foundUrls.length} channel URLs...`);
+    
+    // Create a mapping from search term to topic ID
+    const searchTermToTopicId = {};
+    searchTermsWithTopics.forEach(item => {
+        searchTermToTopicId[item.searchTerm] = item.topicId;
+    });
     
     const analyzedChannels = [];
     let successCount = 0;
@@ -90,6 +121,9 @@ async function analyzeAndStoreChannels(foundUrls) {
             
             // Use existing channel analysis to get full channel data
             const channelInfo = await getChannelByHandle({ handle: urlData.username });
+            
+            // Get the topic ID for this search term
+            const topicId = searchTermToTopicId[urlData.searchTerm] || null;
             
             // Create channel data for suggested channels table
             const suggestedChannelData = {
@@ -106,7 +140,8 @@ async function analyzeAndStoreChannels(foundUrls) {
                 profilePicUrl: channelInfo.thumbnailUrl || null,
                 localProfilePicPath: channelInfo.thumbnailUrl?.startsWith('/api/images/') ? channelInfo.thumbnailUrl : null,
                 searchTerm: urlData.searchTerm,
-                platform: 'instagram'
+                platform: 'instagram',
+                topicId: topicId
             };
             
             // Store in suggested channels database
@@ -114,7 +149,7 @@ async function analyzeAndStoreChannels(foundUrls) {
             analyzedChannels.push(suggestedChannelData);
             successCount++;
             
-            console.log(`Successfully analyzed and stored: ${urlData.username}`);
+            console.log(`Successfully analyzed and stored: ${urlData.username} (topicId: ${topicId})`);
             
             // Add small delay to be respectful to the API
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -136,7 +171,7 @@ async function analyzeAndStoreChannels(foundUrls) {
 }
 
 async function generateSearchTerms(categoryData) {
-    let searchTerms = [];
+    let searchTermsWithTopics = [];
     for (const category of categoryData) {
         let userPrompt = `Given this category data in my scraping system, suggest exactly ${MAX_SEARCHES_PER_CATEGORY} searches that will find similar accounts and channels. The array must be exactly ${MAX_SEARCHES_PER_CATEGORY} long. Category data: ${JSON.stringify(category)}`
         console.log(userPrompt);
@@ -148,8 +183,15 @@ async function generateSearchTerms(categoryData) {
                 name: "SearchTerms"
             }
         });
-        searchTerms.push(...result.searchTerms);
+        
+        // Add each search term with its associated topic ID
+        result.searchTerms.forEach(searchTerm => {
+            searchTermsWithTopics.push({
+                searchTerm: searchTerm,
+                topicId: category.id
+            });
+        });
         console.log(result);
     }
-    return searchTerms;
+    return searchTermsWithTopics;
 }  

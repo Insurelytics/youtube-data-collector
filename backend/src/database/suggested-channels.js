@@ -18,7 +18,9 @@ export function initSuggestedChannelsSchema() {
       localProfilePicPath TEXT,
       searchTerm TEXT NOT NULL,
       foundAt TEXT DEFAULT CURRENT_TIMESTAMP,
-      platform TEXT DEFAULT 'instagram'
+      platform TEXT DEFAULT 'instagram',
+      topicId INTEGER,
+      FOREIGN KEY (topicId) REFERENCES topics(id)
     );
   `);
 }
@@ -29,12 +31,12 @@ export function upsertSuggestedChannel(channel) {
     INSERT INTO suggested_channels (
       id, username, fullName, followersCount, followsCount, postsCount, 
       verified, isPrivate, biography, externalUrl, profilePicUrl, 
-      localProfilePicPath, searchTerm, platform
+      localProfilePicPath, searchTerm, platform, topicId
     )
     VALUES (
       @id, @username, @fullName, @followersCount, @followsCount, @postsCount,
       @verified, @isPrivate, @biography, @externalUrl, @profilePicUrl,
-      @localProfilePicPath, @searchTerm, @platform
+      @localProfilePicPath, @searchTerm, @platform, @topicId
     )
     ON CONFLICT(id) DO UPDATE SET
       username=excluded.username,
@@ -49,7 +51,8 @@ export function upsertSuggestedChannel(channel) {
       profilePicUrl=COALESCE(excluded.profilePicUrl, suggested_channels.profilePicUrl),
       localProfilePicPath=COALESCE(excluded.localProfilePicPath, suggested_channels.localProfilePicPath),
       searchTerm=excluded.searchTerm,
-      platform=COALESCE(excluded.platform, suggested_channels.platform)
+      platform=COALESCE(excluded.platform, suggested_channels.platform),
+      topicId=COALESCE(excluded.topicId, suggested_channels.topicId)
   `);
   
   const withDefaults = { 
@@ -63,6 +66,7 @@ export function upsertSuggestedChannel(channel) {
     profilePicUrl: null,
     localProfilePicPath: null,
     platform: 'instagram',
+    topicId: null,
     ...channel 
   };
   stmt.run(withDefaults);
@@ -107,5 +111,14 @@ export function isChannelAlreadyTracked(username) {
   `).get(username, `ig_${username}`);
   
   return !!(existsInChannels || existsInSuggested);
+}
+
+export function getSearchedTopicIds() {
+  const db = getDatabase();
+  const rows = db.prepare(`
+    SELECT DISTINCT topicId FROM suggested_channels 
+    WHERE topicId IS NOT NULL
+  `).all();
+  return rows.map(row => row.topicId);
 }
 

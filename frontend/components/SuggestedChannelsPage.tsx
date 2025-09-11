@@ -238,7 +238,7 @@ export function SuggestedChannelsPage() {
                 {/* Search term */}
                 <div>
                   <Badge variant="outline" className="text-xs">
-                    Found via: {channel.searchTerm}
+                    {channel.searchTerm}
                   </Badge>
                 </div>
 

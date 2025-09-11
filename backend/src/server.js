@@ -215,6 +215,8 @@ function createServer() {
   app.get('/api/suggested-channels', (req, res) => {
     try {
       const searchTerm = req.query.searchTerm;
+      const minFollowers = Number(req.query.minFollowers || 1000);
+      const maxFollowers = Number(req.query.maxFollowers || 1000000);
       let channels;
       
       if (searchTerm) {
@@ -222,8 +224,18 @@ function createServer() {
       } else {
         channels = listSuggestedChannels();
       }
+
+      // Apply followers filter (include nulls only if no bounds provided)
+      const filtered = channels.filter((c) => {
+        const count = typeof c.followersCount === 'number' ? c.followersCount : (
+          c.followersCount != null ? Number(c.followersCount) : null
+        );
+        if (count == null) return false; // exclude unknown follower counts when filtering
+        if (!Number.isFinite(count)) return false;
+        return count >= minFollowers && count <= maxFollowers;
+      });
       
-      res.json(channels);
+      res.json(filtered);
     } catch (error) {
       console.error('Error fetching suggested channels:', error);
       res.status(500).json({ error: 'Failed to fetch suggested channels' });

@@ -240,6 +240,21 @@ function createServer() {
     }
   });
 
+  // Generate new suggested channels
+  app.post('/api/suggest-channels', async (req, res) => {
+    try {
+      const { suggestChannels } = await import('./scraping/suggest-channels.js');
+      const result = await suggestChannels();
+      res.json(result);
+    } catch (error) {
+      console.error('Error generating suggested channels:', error);
+      res.status(500).json({
+        error: 'Failed to generate suggested channels',
+        message: error.message
+      });
+    }
+  });
+
   // Channel dashboard data
   app.get('/api/channels/:id/dashboard', (req, res) => {
     try {

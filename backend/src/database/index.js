@@ -93,7 +93,9 @@ export {
   listSuggestedChannels,
   getSuggestedChannelsBySearchTerm,
   removeSuggestedChannel,
-  isChannelAlreadyTracked
+  isChannelAlreadyTracked,
+  hasCategoryBeenSearched,
+  getCategoriesWithSuggestions
 } from './suggested-channels.js';
 
 // Initialize all database schemas

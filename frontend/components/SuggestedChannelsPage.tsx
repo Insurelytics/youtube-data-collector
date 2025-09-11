@@ -235,12 +235,6 @@ export function SuggestedChannelsPage() {
                   </div>
                 </div>
 
-                {/* Search term */}
-                <div>
-                  <Badge variant="outline" className="text-xs">
-                    Found via: {channel.searchTerm}
-                  </Badge>
-                </div>
 
                 {/* Biography */}
                 {channel.biography && (

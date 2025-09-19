@@ -1,13 +1,14 @@
 import { ApifyClient } from 'apify-client';
 import dotenv from 'dotenv';
-import { getLastPublishedDate } from '../database/index.js';
+import { getLastPublishedDate, getSetting } from '../database/index.js';
 import { downloadChannelThumbnail } from '../video_processing/image-utils.js';
 
 dotenv.config();
 
 const MAX_VIDEOS_PER_SYNC = parseInt(process.env.MAX_VIDEOS_PER_SYNC) || 25;
 
-const engagementLookbackWindow = 1; // days
+// Move the window back slightly to capture engagement changes around the cutoff
+let engagementLookbackWindow = 1; // days
 
 // Initialize the ApifyClient with API token from .env
 const client = new ApifyClient({
@@ -20,6 +21,20 @@ export async function syncChannelReels({ handle, sinceDays }) {
 
   if (!process.env.APIFY_API_KEY) {
     throw new Error('APIFY_API_KEY environment variable is required for Instagram functionality');
+  }
+
+  // Determine sinceDays from global settings if available
+  try {
+    const criteriaStr = getSetting('globalCriteria');
+    if (criteriaStr) {
+      const criteria = JSON.parse(criteriaStr);
+      const parsed = parseInt(criteria?.timeRange);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        sinceDays = parsed;
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to read globalCriteria for time range, using provided sinceDays');
   }
 
   // Get the last published date for this channel, or use sinceDays as fallback

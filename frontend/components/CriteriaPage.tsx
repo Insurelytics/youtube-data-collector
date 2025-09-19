@@ -6,32 +6,14 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-
-// Time range options with their corresponding days
-const TIME_RANGES = [
-  { label: "7 days", value: "7", days: 7 },
-  { label: "30 days", value: "30", days: 30 },
-  { label: "90 days", value: "90", days: 90 },
-  { label: "6 months", value: "180", days: 180 },
-  { label: "1 year", value: "365", days: 365 },
-  { label: "All time", value: "36500", days: 36500 }
-]
+ 
 
 function getGlobalCriteria() {
-  if (typeof window !== 'undefined') {
-    const stored = localStorage.getItem('youtube-global-criteria')
-    if (stored) {
-      try {
-        return JSON.parse(stored)
-      } catch {}
-    }
-  }
   return {
     viralMultiplier: 5,
     commentWeight: 500,
     likeWeight: 150,
-    timeRange: '90'
+    timeRange: ''
   }
 }
 
@@ -43,6 +25,30 @@ function formatNumber(num: number) {
 
 export function CriteriaPage() {
   const [criteria, setCriteria] = useState(getGlobalCriteria())
+
+  useEffect(() => {
+    // Load client-side to avoid hydration mismatch
+    try {
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('youtube-global-criteria') : null
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        setCriteria(prev => ({ ...prev, ...parsed }))
+      } else {
+        // Default to 120 days on first load
+        const initial = { ...criteria, timeRange: '120' }
+        setCriteria(initial)
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('youtube-global-criteria', JSON.stringify(initial))
+        }
+        fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ settings: { globalCriteria: initial } })
+        }).catch(() => {})
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleCriteriaChange = (field: string, value: number | string) => {
     const newCriteria = { ...criteria, [field]: value }
@@ -179,23 +185,21 @@ export function CriteriaPage() {
                     <Clock className="h-3 w-3" />
                     Analysis Period
                   </Label>
-                  <Select 
-                    value={criteria.timeRange} 
-                    onValueChange={(value) => handleCriteriaChange('timeRange', value)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select time range" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TIME_RANGES.map((range) => (
-                        <SelectItem key={range.value} value={range.value}>
-                          {range.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      id="time-range"
+                      type="number"
+                      min="1"
+                      max="36500"
+                      step="1"
+                      value={criteria.timeRange || ''}
+                      onChange={(e) => handleCriteriaChange('timeRange', e.target.value)}
+                      className="w-28"
+                    />
+                    <span className="text-sm text-muted-foreground">days</span>
+                  </div>
                   <p className="text-xs text-muted-foreground">
-                    Analysis includes videos from the last {TIME_RANGES.find(r => r.value === criteria.timeRange)?.label.toLowerCase() || 'period'}
+                    Analysis includes videos from the last {criteria.timeRange ? `${criteria.timeRange} days` : 'selected period'}
                   </p>
                 </div>
               </div>

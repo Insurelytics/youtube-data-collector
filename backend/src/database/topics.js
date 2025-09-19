@@ -268,10 +268,3 @@ export function getAllVideoTopics() {
   const db = getDatabase();
   return db.prepare('SELECT * FROM video_topics').all();
 }
-
-export function getTopicIdByName(topicName) {
-  const db = getDatabase();
-  const normalizedName = topicName.toLowerCase().trim();
-  const topic = db.prepare('SELECT id FROM topics WHERE name = ?').get(normalizedName);
-  return topic ? topic.id : null;
-}

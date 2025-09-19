@@ -102,7 +102,7 @@ function createServer() {
 
     try {
       // Create a sync job instead of processing directly
-      const jobId = createSyncJob({ handle, platform, sinceDays });
+      const jobId = createSyncJob({ handle, platform, sinceDays, isInitialScrape: 0 });
       res.json({ ok: true, jobId, message: 'Sync job queued' });
     } catch (err) {
       res.status(500).json({ error: err?.message || 'Failed to queue sync job' });
@@ -199,7 +199,7 @@ function createServer() {
 
     try {
       // Create a sync job instead of processing directly
-      const jobId = createSyncJob({ handle, platform, sinceDays: MAX_SYNC_DAYS });
+      const jobId = createSyncJob({ handle, platform, sinceDays: MAX_SYNC_DAYS, isInitialScrape: 1 });
       res.json({ ok: true, jobId, message: 'Channel sync job queued' });
     } catch (e) {
       res.status(500).json({ error: e?.message || 'Failed to queue channel sync job' });
@@ -332,6 +332,7 @@ function createServer() {
           job.progress_total = progress.progressTotal;
         }
       }
+      // Pass-through includes is_initial_scrape from DB
       
       res.json(job);
     } catch (error) {

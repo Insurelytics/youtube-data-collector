@@ -34,7 +34,8 @@ function getGlobalCriteria() {
     viralMultiplier: 5,
     commentWeight: 500,
     likeWeight: 150,
-    timeRange: '90'
+    timeRange: '90',
+    viralMethod: 'subscribers'
   }
 }
 

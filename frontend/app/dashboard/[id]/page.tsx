@@ -116,7 +116,8 @@ function getGlobalCriteria() {
     viralMultiplier: 5,
     commentWeight: 500,
     likeWeight: 150,
-    timeRange: '90'
+    timeRange: '90',
+    viralMethod: 'subscribers'
   }
 }
 
@@ -152,10 +153,10 @@ export default function ChannelDashboard() {
   }, [])
 
   const isViralVideo = (video: any) => {
-    if (!channel?.avgViews) return false
-    const avgViews = Number(channel.avgViews)
+    if (!channel) return false
+    const base = criteria.viralMethod === 'avgViews' ? Number(channel.avgViews) : Number(channel.subscriberCount)
     const viewCount = Number(video.viewCount || 0)
-    return viewCount >= avgViews * criteria.viralMultiplier
+    return base > 0 && viewCount >= base * criteria.viralMultiplier
   }
 
   useEffect(() => {
@@ -354,7 +355,7 @@ export default function ChannelDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle>Viral Videos</CardTitle>
-                <CardDescription>Videos with {criteria.viralMultiplier}x+ more views than average views from the selected time period</CardDescription>
+                <CardDescription>Videos with {criteria.viralMultiplier}x+ more views than {criteria.viralMethod === 'avgViews' ? 'average views' : 'subscriber count'} from the selected time period</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -378,7 +379,7 @@ export default function ChannelDashboard() {
                         </h3>
                         <p className="text-sm text-muted-foreground">{formatDate(video.publishedAt)}</p>
                         <Badge variant="destructive" className="mt-1">
-                          {criteria.viralMultiplier}x+ average views multiplier
+                          {criteria.viralMultiplier}x+ {criteria.viralMethod === 'avgViews' ? 'average views' : 'subscribers'} multiplier
                         </Badge>
                       </div>
                       <div className="text-right space-y-1">

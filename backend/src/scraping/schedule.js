@@ -131,20 +131,24 @@ async function sendSyncResultsEmail(syncStartTime, jobResults) {
             return;
         }
         
-        // Get viral multiplier from settings or use default
+        // Get viral settings from settings or use defaults
         let viralMultiplier = 5;
+        let viralMethod = 'subscribers';
         try {
             const globalCriteria = getSetting('globalCriteria');
             if (globalCriteria) {
                 const criteria = JSON.parse(globalCriteria);
                 viralMultiplier = criteria.viralMultiplier || 5;
+                if (criteria.viralMethod === 'avgViews' || criteria.viralMethod === 'subscribers') {
+                    viralMethod = criteria.viralMethod;
+                }
             }
         } catch (e) {
             console.warn('Failed to parse viral multiplier from settings, using default:', e);
         }
         
         // Identify viral videos
-        const viralVideos = identifyViralVideos(newVideos, viralMultiplier);
+        const viralVideos = identifyViralVideos(newVideos, viralMultiplier, viralMethod);
         console.log(`Identified ${viralVideos.length} viral videos`);
         
         // Send email notification

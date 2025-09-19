@@ -18,8 +18,12 @@ export function initSuggestedChannelsSchema() {
       localProfilePicPath TEXT,
       searchTerm TEXT NOT NULL,
       foundAt TEXT DEFAULT CURRENT_TIMESTAMP,
-      platform TEXT DEFAULT 'instagram'
+      platform TEXT DEFAULT 'instagram',
+      categoryId INTEGER,
+      categoryTopicId INTEGER
     );
+    CREATE INDEX IF NOT EXISTS idx_suggested_channels_categoryId ON suggested_channels(categoryId);
+    CREATE INDEX IF NOT EXISTS idx_suggested_channels_categoryTopicId ON suggested_channels(categoryTopicId);
   `);
 }
 

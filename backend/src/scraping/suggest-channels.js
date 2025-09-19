@@ -7,10 +7,11 @@ import Instructor from "@instructor-ai/instructor";
 import OpenAI from "openai"
 import { z } from "zod"
 import dotenv from 'dotenv'
+import { getDatabase } from '../database/connection.js';
 
 // this is the final step in the initial scrape process, and will search for channels that focus on similar topics to the ones in the database
 
-const TOPICS_TOFETCH = 4; // To generally increase the number of searches increase this number.  
+const TOPICS_TOFETCH = 50; // To generally increase the number of searches increase this number.  
 // This is not a 1:1 relationship but having more topics will trend towards more categories being found.
 
 const MAX_SEARCHES_PER_CATEGORY = 3; // Increasing this number increases cost and time taken.
@@ -36,13 +37,24 @@ const SearchTermsSchema = z.object({
 
 export async function suggestChannels() {
     // get topics defined as categories by topic math
-
     const { topics } = getTopicGraph(0, 1, TOPICS_TOFETCH); 
+    // Avoid circular structure error by logging only names
+    console.log('All topics:', topics.map(t => t.name));
     const categories = topics.filter(topic => topic.isCategory);
+    console.log('Categories:', categories.map(t => t.name));
+    // Get all categories that have not had suggestions generated yet
+    const db = getDatabase();
+    const unsearchedCategories = db.prepare('SELECT id, name FROM topics WHERE suggested_channels_generated = 0').all();
+    console.log(unsearchedCategories);
+    const unsearchedCategoryNames = new Set(unsearchedCategories.map(row => row.name));
+    const categoriesToSearch = categories.filter(cat => unsearchedCategoryNames.has(cat.name));
 
     // for each category, get the name, topics connected, and strength of those connections
-    const categoryData = categories.map(category => {
+    const categoryData = categoriesToSearch.map(category => {
+        // Get the topic ID from the database since getTopicGraph doesn't include IDs
+        const topicFromDb = unsearchedCategories.find(row => row.name === category.name);
         return {
+            id: topicFromDb ? topicFromDb.id : null,
             name: category.name,
             topics: category.connections.map(connection => ({
                 name: connection.topic.name,
@@ -51,33 +63,24 @@ export async function suggestChannels() {
         };
     });
 
-    console.log('Generating search terms for categories...');
-    let searchTerms = await generateSearchTerms(categoryData);
-    console.log(`Generated ${searchTerms.length} search terms:`, searchTerms);
-    
-    // Find channel URLs for all search terms
-    console.log('Starting channel URL discovery process...');
-    const urlResult = await findChannelsForAllSearchTerms(searchTerms, CHANNELS_PER_SEARCH);
-    
-    console.log('Channel URL discovery completed!');
-    console.log(`URL Results: Found ${urlResult.foundUrls.length} URLs from ${urlResult.successCount}/${urlResult.totalSearchTerms} successful searches`);
-    
-    // Analyze and store the found channels
-    console.log('Starting channel analysis and storage...');
-    const analysisResult = await analyzeAndStoreChannels(urlResult.foundUrls);
-    
-    console.log('Channel analysis completed!');
-    console.log(`Analysis Results: ${analysisResult.successCount} channels analyzed and stored, ${analysisResult.errorCount} failed`);
-    
-    return {
-        urlDiscovery: urlResult,
-        channelAnalysis: analysisResult,
-        totalFoundUrls: urlResult.foundUrls.length,
-        totalStoredChannels: analysisResult.successCount
-    };
+    if (categoryData.length === 0) {
+        console.log('No new categories to search. Skipping suggested channel generation.');
+        return { urlDiscovery: null, channelAnalysis: null, totalFoundUrls: 0, totalStoredChannels: 0 };
+    }
+
+    // For each category, generate search terms, analyze/store channels, and mark as generated
+    for (const categoryObj of categoryData) {
+        const searchTerms = await generateSearchTerms([categoryObj]);
+        const urlResult = await findChannelsForAllSearchTerms(searchTerms, CHANNELS_PER_SEARCH);
+        await analyzeAndStoreChannels(urlResult.foundUrls, categoryObj.id);
+        // Mark this category as generated
+        db.prepare('UPDATE topics SET suggested_channels_generated = 1 WHERE id = ?').run(categoryObj.id);
+    }
+
+    return { urlDiscovery: null, channelAnalysis: null, totalFoundUrls: 0, totalStoredChannels: 0 };
 }
 
-async function analyzeAndStoreChannels(foundUrls) {
+async function analyzeAndStoreChannels(foundUrls, categoryId) {
     console.log(`Analyzing ${foundUrls.length} channel URLs...`);
     
     const analyzedChannels = [];
@@ -106,7 +109,8 @@ async function analyzeAndStoreChannels(foundUrls) {
                 profilePicUrl: channelInfo.thumbnailUrl || null,
                 localProfilePicPath: channelInfo.thumbnailUrl?.startsWith('/api/images/') ? channelInfo.thumbnailUrl : null,
                 searchTerm: urlData.searchTerm,
-                platform: 'instagram'
+                platform: 'instagram',
+                categoryId: categoryId
             };
             
             // Store in suggested channels database

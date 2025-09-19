@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -28,12 +29,19 @@ interface SuggestedChannel {
 export function SuggestedChannelsPage() {
   const [channels, setChannels] = useState<SuggestedChannel[]>([])
   const [loading, setLoading] = useState(true)
-  const [generatingNew, setGeneratingNew] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [minFollowers, setMinFollowers] = useState<number>(1000)
+  const [maxFollowers, setMaxFollowers] = useState<number>(1000000)
+  const [tempMinFollowers, setTempMinFollowers] = useState<string>('1000')
+  const [tempMaxFollowers, setTempMaxFollowers] = useState<string>('1000000')
 
   const fetchChannels = async () => {
     try {
-      const response = await fetch('/api/suggested-channels')
+      const params = new URLSearchParams({
+        minFollowers: String(minFollowers),
+        maxFollowers: String(maxFollowers)
+      })
+      const response = await fetch(`/api/suggested-channels?${params.toString()}`)
       if (!response.ok) throw new Error('Failed to fetch suggested channels')
       const data = await response.json()
       setChannels(data)
@@ -45,21 +53,21 @@ export function SuggestedChannelsPage() {
     }
   }
 
-  const generateNewSuggestions = async () => {
-    setGeneratingNew(true)
-    try {
-      const response = await fetch('/api/suggest-channels', { method: 'POST' })
-      if (!response.ok) throw new Error('Failed to generate suggestions')
-      const result = await response.json()
-      console.log('Generated suggestions:', result)
-      await fetchChannels() // Refresh the list
-      setError(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate suggestions')
-    } finally {
-      setGeneratingNew(false)
+  // Load filters from localStorage on mount
+  useEffect(() => {
+    const savedMin = typeof window !== 'undefined' ? window.localStorage.getItem('suggestedChannels:minFollowers') : null
+    const savedMax = typeof window !== 'undefined' ? window.localStorage.getItem('suggestedChannels:maxFollowers') : null
+    if (savedMin) {
+      const parsed = parseInt(savedMin, 10)
+      if (!Number.isNaN(parsed)) setMinFollowers(parsed)
+      if (!Number.isNaN(parsed)) setTempMinFollowers(String(parsed))
     }
-  }
+    if (savedMax) {
+      const parsed = parseInt(savedMax, 10)
+      if (!Number.isNaN(parsed)) setMaxFollowers(parsed)
+      if (!Number.isNaN(parsed)) setTempMaxFollowers(String(parsed))
+    }
+  }, [])
 
   const addChannelToTracking = async (channel: SuggestedChannel) => {
     try {
@@ -104,6 +112,17 @@ export function SuggestedChannelsPage() {
 
   const getInstagramUrl = (username: string) => `https://instagram.com/${username}`
 
+  // Persist filters and refetch when they change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('suggestedChannels:minFollowers', String(minFollowers))
+      window.localStorage.setItem('suggestedChannels:maxFollowers', String(maxFollowers))
+    }
+    setLoading(true)
+    fetchChannels()
+  }, [minFollowers, maxFollowers])
+
+  // Initial fetch
   useEffect(() => {
     fetchChannels()
   }, [])
@@ -126,18 +145,48 @@ export function SuggestedChannelsPage() {
             Channels found based on your tracked content topics
           </p>
         </div>
-        <Button 
-          onClick={generateNewSuggestions} 
-          disabled={generatingNew}
-          className="flex items-center gap-2"
-        >
-          {generatingNew ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Search className="h-4 w-4" />
-          )}
-          {generatingNew ? 'Generating...' : 'Generate New Suggestions'}
-        </Button>
+        <div className="flex items-end gap-2">
+          <div className="flex flex-col">
+            <label className="text-xs text-muted-foreground mb-1">Min followers</label>
+            <Input
+              type="number"
+              className="w-36"
+              value={tempMinFollowers}
+              min={0}
+              onChange={(e) => setTempMinFollowers(e.target.value)}
+              onBlur={() => {
+                const parsed = parseInt(tempMinFollowers, 10)
+                setMinFollowers(Number.isNaN(parsed) ? 0 : Math.max(0, parsed))
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const parsed = parseInt(tempMinFollowers, 10)
+                  setMinFollowers(Number.isNaN(parsed) ? 0 : Math.max(0, parsed))
+                }
+              }}
+            />
+          </div>
+          <div className="flex flex-col">
+            <label className="text-xs text-muted-foreground mb-1">Max followers</label>
+            <Input
+              type="number"
+              className="w-36"
+              value={tempMaxFollowers}
+              min={0}
+              onChange={(e) => setTempMaxFollowers(e.target.value)}
+              onBlur={() => {
+                const parsed = parseInt(tempMaxFollowers, 10)
+                setMaxFollowers(Number.isNaN(parsed) ? 0 : Math.max(0, parsed))
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const parsed = parseInt(tempMaxFollowers, 10)
+                  setMaxFollowers(Number.isNaN(parsed) ? 0 : Math.max(0, parsed))
+                }
+              }}
+            />
+          </div>
+        </div>
       </div>
 
       {error && (
@@ -152,21 +201,8 @@ export function SuggestedChannelsPage() {
             <Search className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
             <h3 className="text-lg font-semibold mb-2">No Suggested Channels</h3>
             <p className="text-muted-foreground mb-4">
-              Generate suggestions based on your tracked channel topics to discover new accounts to follow.
+              Try adjusting the follower filters to refine your suggested accounts.
             </p>
-            <Button onClick={generateNewSuggestions} disabled={generatingNew}>
-              {generatingNew ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <Search className="h-4 w-4 mr-2" />
-                  Generate Suggestions
-                </>
-              )}
-            </Button>
           </CardContent>
         </Card>
       ) : (
@@ -233,13 +269,6 @@ export function SuggestedChannelsPage() {
                     </div>
                     <div className="text-muted-foreground">Posts</div>
                   </div>
-                </div>
-
-                {/* Search term */}
-                <div>
-                  <Badge variant="outline" className="text-xs">
-                    Found via: {channel.searchTerm}
-                  </Badge>
                 </div>
 
                 {/* Biography */}

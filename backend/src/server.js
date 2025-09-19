@@ -102,7 +102,7 @@ function createServer() {
 
     try {
       // Create a sync job instead of processing directly
-      const jobId = createSyncJob({ handle, platform, sinceDays });
+      const jobId = createSyncJob({ handle, platform, sinceDays, isInitialScrape: 0 });
       res.json({ ok: true, jobId, message: 'Sync job queued' });
     } catch (err) {
       res.status(500).json({ error: err?.message || 'Failed to queue sync job' });
@@ -199,7 +199,7 @@ function createServer() {
 
     try {
       // Create a sync job instead of processing directly
-      const jobId = createSyncJob({ handle, platform, sinceDays: MAX_SYNC_DAYS });
+      const jobId = createSyncJob({ handle, platform, sinceDays: MAX_SYNC_DAYS, isInitialScrape: 1 });
       res.json({ ok: true, jobId, message: 'Channel sync job queued' });
     } catch (e) {
       res.status(500).json({ error: e?.message || 'Failed to queue channel sync job' });
@@ -215,6 +215,8 @@ function createServer() {
   app.get('/api/suggested-channels', (req, res) => {
     try {
       const searchTerm = req.query.searchTerm;
+      const minFollowers = Number(req.query.minFollowers || 1000);
+      const maxFollowers = Number(req.query.maxFollowers || 1000000);
       let channels;
       
       if (searchTerm) {
@@ -222,8 +224,18 @@ function createServer() {
       } else {
         channels = listSuggestedChannels();
       }
+
+      // Apply followers filter (include nulls only if no bounds provided)
+      const filtered = channels.filter((c) => {
+        const count = typeof c.followersCount === 'number' ? c.followersCount : (
+          c.followersCount != null ? Number(c.followersCount) : null
+        );
+        if (count == null) return false; // exclude unknown follower counts when filtering
+        if (!Number.isFinite(count)) return false;
+        return count >= minFollowers && count <= maxFollowers;
+      });
       
-      res.json(channels);
+      res.json(filtered);
     } catch (error) {
       console.error('Error fetching suggested channels:', error);
       res.status(500).json({ error: 'Failed to fetch suggested channels' });
@@ -320,6 +332,7 @@ function createServer() {
           job.progress_total = progress.progressTotal;
         }
       }
+      // Pass-through includes is_initial_scrape from DB
       
       res.json(job);
     } catch (error) {

@@ -13,6 +13,7 @@ export function initJobsSchema() {
       completed_at TEXT,
       error_message TEXT,
       since_days INTEGER,
+      is_initial_scrape INTEGER DEFAULT 0,
       channel_id TEXT,
       channel_title TEXT,
       videos_found INTEGER DEFAULT 0,
@@ -24,21 +25,30 @@ export function initJobsSchema() {
     CREATE INDEX IF NOT EXISTS idx_sync_jobs_status ON sync_jobs(status);
     CREATE INDEX IF NOT EXISTS idx_sync_jobs_created ON sync_jobs(created_at DESC);
   `);
+
+  // Ensure new columns exist for older databases
+  try {
+    const columns = db.prepare(`PRAGMA table_info(sync_jobs)`).all();
+    const hasInitialFlag = columns.some(col => col.name === 'is_initial_scrape');
+    if (!hasInitialFlag) {
+      db.exec(`ALTER TABLE sync_jobs ADD COLUMN is_initial_scrape INTEGER DEFAULT 0`);
+    }
+  } catch {}
 }
 
-export function createSyncJob({ handle, platform, sinceDays = null }) {
+export function createSyncJob({ handle, platform, sinceDays = null, isInitialScrape = 0 }) {
   const db = getDatabase();
   const stmt = db.prepare(`
-    INSERT INTO sync_jobs (handle, platform, status, created_at, since_days)
-    VALUES (?, ?, 'pending', ?, ?)
+    INSERT INTO sync_jobs (handle, platform, status, created_at, since_days, is_initial_scrape)
+    VALUES (?, ?, 'pending', ?, ?, ?)
   `);
-  const result = stmt.run(handle, platform, new Date().toISOString(), sinceDays);
+  const result = stmt.run(handle, platform, new Date().toISOString(), sinceDays, isInitialScrape ? 1 : 0);
   return result.lastInsertRowid;
 }
 
 export function updateSyncJob(jobId, updates) {
   const db = getDatabase();
-  const allowedFields = ['status', 'started_at', 'completed_at', 'error_message', 'channel_id', 'channel_title', 'videos_found', 'videos_processed', 'new_videos', 'updated_videos'];
+  const allowedFields = ['status', 'started_at', 'completed_at', 'error_message', 'channel_id', 'channel_title', 'videos_found', 'videos_processed', 'new_videos', 'updated_videos', 'is_initial_scrape'];
   const fields = Object.keys(updates).filter(key => allowedFields.includes(key));
   if (fields.length === 0) return;
   
@@ -52,7 +62,7 @@ export function updateSyncJob(jobId, updates) {
 export function getNextPendingJob() {
   const db = getDatabase();
   return db.prepare(`
-    SELECT id, handle, platform, status, created_at, since_days, channel_id, channel_title,
+    SELECT id, handle, platform, status, created_at, since_days, is_initial_scrape, channel_id, channel_title,
            videos_found, videos_processed, new_videos, updated_videos
     FROM sync_jobs
     WHERE status = 'pending'
@@ -65,7 +75,7 @@ export function getJobStatus(jobId) {
   const db = getDatabase();
   return db.prepare(`
     SELECT id, handle, platform, status, created_at, started_at, completed_at, error_message, since_days,
-           channel_id, channel_title, videos_found, videos_processed, new_videos, updated_videos
+           is_initial_scrape, channel_id, channel_title, videos_found, videos_processed, new_videos, updated_videos
     FROM sync_jobs
     WHERE id = ?
   `).get(jobId);
@@ -76,7 +86,7 @@ export function listJobs({ limit = 50, offset = 0 } = {}) {
   const total = db.prepare('SELECT COUNT(*) as count FROM sync_jobs').get().count;
   const jobs = db.prepare(`
     SELECT id, handle, platform, status, created_at, started_at, completed_at, error_message, since_days,
-           channel_id, channel_title, videos_found, videos_processed, new_videos, updated_videos
+           is_initial_scrape, channel_id, channel_title, videos_found, videos_processed, new_videos, updated_videos
     FROM sync_jobs
     ORDER BY created_at DESC
     LIMIT ? OFFSET ?

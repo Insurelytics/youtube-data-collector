@@ -311,6 +311,10 @@ export function ChannelsPage() {
   return (
     <div className="space-y-6">
       {/* Add Channel Section */}
+      <div className="mb-3">
+          <h1 className="text-2xl font-semibold">Add and Manage Channels</h1>
+          <p className="text-md text-muted-foreground">Add new channels to track and manage your tracked channels</p>
+        </div>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

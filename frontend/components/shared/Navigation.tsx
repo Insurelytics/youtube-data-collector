@@ -24,30 +24,28 @@ export function Navigation() {
   ]
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Social Media Analytics Dashboard</h1>
-        <p className="text-muted-foreground">Track and analyze Instagram and YouTube channels</p>
+    <div className="sticky top-0 z-40 w-full border-b bg-background/60 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+      <div className="container mx-auto px-6 py-4">
+        
+        <nav className="flex gap-2 overflow-x-auto">
+          {navItems.map((item) => {
+            const Icon = item.icon
+            const isActive = pathname === item.href
+            
+            return (
+              <Link key={item.href} href={item.href}>
+                <Button 
+                  variant={isActive ? "default" : "outline"} 
+                  className={`flex items-center gap-2 whitespace-nowrap ${item.hasActive ? "blue-shimmer" : ""}`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {item.label}
+                </Button>
+              </Link>
+            )
+          })}
+        </nav>
       </div>
-      
-      <nav className="flex gap-2 mb-6 overflow-x-auto">
-        {navItems.map((item) => {
-          const Icon = item.icon
-          const isActive = pathname === item.href
-          
-          return (
-            <Link key={item.href} href={item.href}>
-              <Button 
-                variant={isActive ? "default" : "outline"} 
-                className={`flex items-center gap-2 whitespace-nowrap ${item.hasActive ? "blue-shimmer" : ""}`}
-              >
-                <Icon className="h-4 w-4" />
-                {item.label}
-              </Button>
-            </Link>
-          )
-        })}
-      </nav>
     </div>
   )
 }

@@ -7,13 +7,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
  
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 function getGlobalCriteria() {
   return {
     viralMultiplier: 5,
     commentWeight: 500,
     likeWeight: 150,
-    timeRange: ''
+    timeRange: '',
+    viralMethod: 'subscribers'
   }
 }
 
@@ -35,7 +37,7 @@ export function CriteriaPage() {
         setCriteria(prev => ({ ...prev, ...parsed }))
       } else {
         // Default to 120 days on first load
-        const initial = { ...criteria, timeRange: '120' }
+        const initial = { ...criteria, timeRange: '120', viralMethod: 'subscribers' }
         setCriteria(initial)
         if (typeof window !== 'undefined') {
           localStorage.setItem('youtube-global-criteria', JSON.stringify(initial))
@@ -107,12 +109,25 @@ export function CriteriaPage() {
                       onChange={(e) => handleCriteriaChange('viralMultiplier', parseFloat(e.target.value) || 5)}
                       className="w-20"
                     />
-                    <span className="text-sm text-muted-foreground">
-                      x average views
-                    </span>
+                    <span className="text-sm text-muted-foreground">x</span>
+                  </div>
+                  <div className="space-y-2" style={{ maxWidth: 300 }}>
+                    <Label htmlFor="viral-method">Viral Threshold Based On</Label>
+                    <Select
+                      value={criteria.viralMethod || 'subscribers'}
+                      onValueChange={(value) => handleCriteriaChange('viralMethod', value)}
+                    >
+                      <SelectTrigger id="viral-method" className="w-full">
+                        <SelectValue placeholder="Select method" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="subscribers">Channel subscribers/followers</SelectItem>
+                        <SelectItem value="avgViews">Average views</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Videos need {criteria.viralMultiplier}x+ more views than average views to be considered viral
+                    Videos need {criteria.viralMultiplier}x+ more views than {criteria.viralMethod === 'avgViews' ? 'average views' : 'subscriber count'} to be considered viral
                   </p>
                 </div>
               </div>
@@ -219,7 +234,7 @@ export function CriteriaPage() {
                 <div className="space-y-2">
                   <h4 className="font-medium text-sm">Viral Video Detection</h4>
                   <p className="text-sm text-muted-foreground">
-                    A channel with 10K average views needs <strong>{formatNumber(10000 * criteria.viralMultiplier)}</strong> views 
+                    A channel with 10K {criteria.viralMethod === 'avgViews' ? 'average views' : 'subscribers'} needs <strong>{formatNumber(10000 * criteria.viralMultiplier)}</strong> views 
                     for a video to be considered viral
                   </p>
                 </div>
@@ -239,7 +254,7 @@ export function CriteriaPage() {
             <Button 
               variant="outline" 
               onClick={() => {
-                const defaultCriteria = { viralMultiplier: 5, commentWeight: 500, likeWeight: 150, timeRange: '90' }
+                const defaultCriteria = { viralMultiplier: 5, commentWeight: 500, likeWeight: 150, timeRange: '120', viralMethod: 'subscribers' }
                 setCriteria(defaultCriteria)
                 if (typeof window !== 'undefined') {
                   localStorage.setItem('youtube-global-criteria', JSON.stringify(defaultCriteria))

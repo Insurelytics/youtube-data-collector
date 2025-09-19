@@ -23,6 +23,7 @@ import {
   getJobStatus, 
   setSetting, 
   getSettings, 
+  getSetting, 
   getTopicStats, 
   getVideosByTopic, 
   cleanupOrphanedRunningJobs,
@@ -166,6 +167,16 @@ function createServer() {
       
       // Add viral video counts to each channel
       const viralMultiplier = Number(req.query.viralMultiplier || 5);
+      let viralMethod = 'subscribers';
+      try {
+        const gc = getSetting('globalCriteria');
+        if (gc) {
+          const parsed = JSON.parse(gc);
+          if (parsed.viralMethod === 'avgViews' || parsed.viralMethod === 'subscribers') {
+            viralMethod = parsed.viralMethod;
+          }
+        }
+      } catch {}
       const days = Number(req.query.days || DEFAULT_DAYS);
       const sinceIso = days < DEFAULT_DAYS ? new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString() : undefined;
       
@@ -174,6 +185,8 @@ function createServer() {
         viralVideoCount: getViralVideoCount({ 
           channelId: channel.id, 
           avgViews: channel.avgViews, 
+          subscriberCount: channel.subscriberCount,
+          viralMethod,
           viralMultiplier,
           sinceIso
         })
@@ -260,12 +273,22 @@ function createServer() {
       if (!ch) return res.status(404).json({ error: 'not found' });
       const days = Number(req.query.days || DEFAULT_DAYS);
       const viralMultiplier = Number(req.query.viralMultiplier || 5);
+      let viralMethod = 'subscribers';
+      try {
+        const gc = getSetting('globalCriteria');
+        if (gc) {
+          const parsed = JSON.parse(gc);
+          if (parsed.viralMethod === 'avgViews' || parsed.viralMethod === 'subscribers') {
+            viralMethod = parsed.viralMethod;
+          }
+        }
+      } catch {}
       const likeWeight = Number(req.query.likeWeight || 150);
       const commentWeight = Number(req.query.commentWeight || 500);
       const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
       const trends = getChannelTrends({ channelId, sinceIso });
       const top = getTopVideos({ channelId, sinceIso, likeWeight, commentWeight });
-      const special = getSpecialVideos({ channelId, avgViews: ch.avgViews, sinceIso, viralMultiplier });
+      const special = getSpecialVideos({ channelId, avgViews: ch.avgViews, subscriberCount: ch.subscriberCount, viralMethod, sinceIso, viralMultiplier });
       res.json({ channel: ch, trends, top, special });
     } catch (e) {
       res.status(500).json({ error: e?.message || 'dashboard failed' });

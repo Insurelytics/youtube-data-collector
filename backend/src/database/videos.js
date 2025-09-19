@@ -232,11 +232,12 @@ export function getTimeFilteredAvgViews({ channelId, sinceIso }) {
   return result?.avgViews || 0;
 }
 
-export function getSpecialVideos({ channelId, avgViews, sinceIso, viralMultiplier = 5 }) {
+export function getSpecialVideos({ channelId, avgViews, subscriberCount, viralMethod = 'subscribers', sinceIso, viralMultiplier = 5 }) {
   const db = getDatabase();
   
   // Use time-filtered average views for consistency
   const effectiveAvgViews = sinceIso ? getTimeFilteredAvgViews({ channelId, sinceIso }) : avgViews;
+  const thresholdBase = viralMethod === 'avgViews' ? (effectiveAvgViews || 0) : (subscriberCount || 0);
   
   const rows = db.prepare(`
     SELECT id, title, viewCount, likeCount, commentCount, publishedAt, thumbnails,
@@ -244,18 +245,19 @@ export function getSpecialVideos({ channelId, avgViews, sinceIso, viralMultiplie
     FROM videos
     WHERE channelId = :channelId AND publishedAt >= :sinceIso AND COALESCE(viewCount,0) >= :threshold
     ORDER BY COALESCE(viewCount,0) DESC
-  `).all({ channelId, sinceIso, threshold: viralMultiplier * (effectiveAvgViews || 0) });
+  `).all({ channelId, sinceIso, threshold: viralMultiplier * thresholdBase });
   return rows;
 }
 
-export function getViralVideoCount({ channelId, avgViews, viralMultiplier = 5, sinceIso }) {
+export function getViralVideoCount({ channelId, avgViews, subscriberCount, viralMethod = 'subscribers', viralMultiplier = 5, sinceIso }) {
   const db = getDatabase();
   
   // If sinceIso is provided, use time-filtered average views
   const effectiveAvgViews = sinceIso ? getTimeFilteredAvgViews({ channelId, sinceIso }) : avgViews;
+  const thresholdBase = viralMethod === 'avgViews' ? (effectiveAvgViews || 0) : (subscriberCount || 0);
   
   const clauses = ['channelId = :channelId', 'COALESCE(viewCount,0) >= :threshold'];
-  const params = { channelId, threshold: viralMultiplier * (effectiveAvgViews || 0) };
+  const params = { channelId, threshold: viralMultiplier * thresholdBase };
   
   if (sinceIso) {
     clauses.push('publishedAt >= :sinceIso');
@@ -287,7 +289,7 @@ export function getNewVideosSince(sinceTimestamp) {
   `).all(sinceTimestamp);
 }
 
-export function identifyViralVideos(videos, viralMultiplier = 5) {
+export function identifyViralVideos(videos, viralMultiplier = 5, viralMethod = 'subscribers') {
   const db = getDatabase();
   
   if (!videos || videos.length === 0) return [];
@@ -307,25 +309,35 @@ export function identifyViralVideos(videos, viralMultiplier = 5) {
   Object.keys(channelGroups).forEach(channelId => {
     const channelVideos = channelGroups[channelId];
     
-    // Get the channel's average views for viral calculation
-    const avgViewsResult = db.prepare(`
-      SELECT AVG(COALESCE(viewCount,0)) as avgViews
-      FROM videos
-      WHERE channelId = ? AND viewCount IS NOT NULL AND viewCount > 0
-    `).get(channelId);
-    
-    const avgViews = avgViewsResult?.avgViews || 0;
-    const viralThreshold = avgViews * viralMultiplier;
+    // Get base metric for viral calculation
+    let viralThreshold = 0;
+    let avgViews = 0;
+    let subscribers = 0;
+    if (viralMethod === 'avgViews') {
+      const avgViewsResult = db.prepare(`
+        SELECT AVG(COALESCE(viewCount,0)) as avgViews
+        FROM videos
+        WHERE channelId = ? AND viewCount IS NOT NULL AND viewCount > 0
+      `).get(channelId);
+      avgViews = avgViewsResult?.avgViews || 0;
+      viralThreshold = avgViews * viralMultiplier;
+    } else {
+      const subRow = db.prepare(`SELECT COALESCE(subscriberCount,0) as subs FROM channels WHERE id = ?`).get(channelId);
+      subscribers = subRow?.subs || 0;
+      viralThreshold = subscribers * viralMultiplier;
+    }
     
     // Find videos that exceed the viral threshold
     channelVideos.forEach(video => {
       const viewCount = video.viewCount || 0;
-      if (viewCount >= viralThreshold && avgViews > 0) {
+      const baseOk = viralMethod === 'avgViews' ? avgViews > 0 : subscribers > 0;
+      if (viewCount >= viralThreshold && baseOk) {
         viralVideos.push({
           ...video,
           viralThreshold,
           avgViews,
-          viralMultiplier: (viewCount / avgViews).toFixed(1)
+          subscribers,
+          viralMultiplier: baseOk ? (viewCount / (viralMethod === 'avgViews' ? avgViews : subscribers)).toFixed(1) : null
         });
       }
     });

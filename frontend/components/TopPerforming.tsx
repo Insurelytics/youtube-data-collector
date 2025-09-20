@@ -185,6 +185,11 @@ export default function TopPerforming() {
     window.open(videoUrl, '_blank', 'noopener,noreferrer')
   }
 
+  const CtaBadge = ({ video }: { video: any }) => {
+    if (!video?.hasCallToAction) return null;
+    return <Badge variant="destructive" className="ml-2">CTA</Badge>;
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -385,7 +390,7 @@ export default function TopPerforming() {
                                     className="p-2 bg-muted/30 rounded text-xs cursor-pointer hover:bg-muted/50 transition-colors group"
                                   >
                                     <div className="flex items-start justify-between mb-1">
-                                      <div className="font-medium line-clamp-2 group-hover:text-blue-600 flex-1 pr-2">{video.title}</div>
+                                      <div className="font-medium line-clamp-2 group-hover:text-blue-600 flex-1 pr-2">{video.title}<CtaBadge video={video} /></div>
                                       <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-blue-600 flex-shrink-0" />
                                     </div>
                                     <div className="flex items-center gap-3 text-muted-foreground">
@@ -522,7 +527,7 @@ export default function TopPerforming() {
                                 className="p-2 bg-muted/30 rounded text-xs cursor-pointer hover:bg-muted/50 transition-colors group"
                               >
                                 <div className="flex items-start justify-between mb-1">
-                                  <div className="font-medium line-clamp-2 group-hover:text-blue-600 flex-1 pr-2">{video.title}</div>
+                                  <div className="font-medium line-clamp-2 group-hover:text-blue-600 flex-1 pr-2">{video.title}<CtaBadge video={video} /></div>
                                   <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-blue-600 flex-shrink-0" />
                                 </div>
                                 <div className="flex items-center gap-3 text-muted-foreground">

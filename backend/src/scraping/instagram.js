@@ -106,6 +106,29 @@ export async function syncChannelReels({ handle, sinceDays }) {
       }
     }
 
+    // Helper to detect CTA-bait based on repetitive identical comments
+    const detectHasCallToAction = (latestComments) => {
+      try {
+        if (!Array.isArray(latestComments)) return 0;
+        const texts = latestComments
+          .map((c) => (c?.text || '').trim().toLowerCase())
+          .filter(Boolean);
+        if (texts.length <= 2) return 0;
+        const freq = new Map();
+        for (const t of texts) {
+          freq.set(t, (freq.get(t) || 0) + 1);
+        }
+        const total = texts.length;
+        let maxCount = 0;
+        for (const count of freq.values()) {
+          if (count > maxCount) maxCount = count;
+        }
+        return maxCount / total >= 0.6 ? 1 : 0;
+      } catch {
+        return 0;
+      }
+    };
+
     // Convert Instagram posts to our video format - items are already the posts
     const reels = items.map(item => ({
       id: `ig_${item.shortCode}`, // Prefix with 'ig_' to avoid conflicts with YouTube IDs
@@ -133,6 +156,7 @@ export async function syncChannelReels({ handle, sinceDays }) {
       url: item.url || null,
       firstComment: item.firstComment || null,
       latestComments: item.latestComments || null,
+      hasCallToAction: detectHasCallToAction(item.latestComments),
       ownerId: item.ownerId || null,
       ownerUsername: item.ownerUsername || null,
       ownerFullName: item.ownerFullName || null,

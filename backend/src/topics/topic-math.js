@@ -30,10 +30,13 @@ class Topic {
 }
 
 // return a force directed graph of topics along with their engagement multiplier and other metrics
-export function getTopicGraph(regularizationWeight = 10, minimumSampleSize = 1, maxNodes = 10) {
+export function getTopicGraph(regularizationWeight = 10, minimumSampleSize = 1, maxNodes = 10, excludeCta = false) {
     // maxNodes = 1000;
     // 1: Get all videos from the database
-    const videos = getAllVideos();
+    let videos = getAllVideos();
+    if (excludeCta) {
+        videos = videos.filter(v => !v.hasCallToAction);
+    }
     // 2: Compute engagement score for each video
     videos.forEach(video => {
         video.engagementScore = calculateEngagementScore(video);
@@ -98,6 +101,7 @@ export function getTopicGraph(regularizationWeight = 10, minimumSampleSize = 1, 
             views: video.viewCount || 0,
             comments: video.commentCount || 0,
             likes: video.likeCount || 0,
+            hasCallToAction: video.hasCallToAction || 0,
             id: video.id,
             publishedAt: video.publishedAt
         }));

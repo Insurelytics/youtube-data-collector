@@ -93,6 +93,13 @@ function cleanTitle(title: string): string {
   return title.replace(/#\w+/g, '').replace(/\s+/g, ' ').trim()
 }
 
+function CtaBadge({ video }: { video: any }) {
+  if (!video?.hasCallToAction) return null
+  return (
+    <Badge variant="destructive" className="ml-2">CTA</Badge>
+  )
+}
+
 // Time range options with their corresponding days
 const TIME_RANGES = [
   { label: "7 days", value: "7", days: 7 },
@@ -292,7 +299,7 @@ export default function ChannelDashboard() {
               <TabsTrigger value="recent">All Videos</TabsTrigger>
             </TabsList>
             
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="flex items-center gap-4 text-sm text-muted-foreground">
               <Clock className="h-4 w-4" />
               <span>Time Range: {TIME_RANGES.find(r => r.value === criteria.timeRange)?.label || 'All time'}</span>
               <span className="text-xs">(set in global criteria)</span>
@@ -325,6 +332,7 @@ export default function ChannelDashboard() {
                           <a href={getPostUrl(video)} target="_blank" rel="noopener noreferrer" className="hover:underline">
                             {cleanTitle(video.title)}
                           </a>
+                          <CtaBadge video={video} />
                         </h3>
                         <p className="text-sm text-muted-foreground">{formatDate(video.publishedAt)}</p>
                       </div>
@@ -376,6 +384,7 @@ export default function ChannelDashboard() {
                           <a href={getPostUrl(video)} target="_blank" rel="noopener noreferrer" className="hover:underline">
                             {cleanTitle(video.title)}
                           </a>
+                          <CtaBadge video={video} />
                         </h3>
                         <p className="text-sm text-muted-foreground">{formatDate(video.publishedAt)}</p>
                         <Badge variant="destructive" className="mt-1">
@@ -439,6 +448,7 @@ export default function ChannelDashboard() {
                                 <a href={getPostUrl(video)} target="_blank" rel="noopener noreferrer" className="hover:underline">
                                   {cleanTitle(video.title)}
                                 </a>
+                                <CtaBadge video={video} />
                               </p>
                               <p className="text-sm text-muted-foreground">{video.durationSeconds ? `${Math.round(video.durationSeconds/60)}m` : ''}</p>
                             </div>

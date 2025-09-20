@@ -49,6 +49,7 @@ type Video = {
   channelTitle?: string
   localImageUrl?: string | null
   shortCode?: string | null
+  hasCallToAction?: number | boolean
 }
 
 type Props = {
@@ -1056,6 +1057,9 @@ export default function TopicForceGraph({
                           className="font-medium text-sm line-clamp-2 group-hover:text-blue-600 cursor-pointer hover:underline"
                         >
                           {video.title}
+                          {video.hasCallToAction ? (
+                            <Badge variant="destructive" className="ml-2">CTA</Badge>
+                          ) : null}
                         </h4>
                         {video.channelTitle && (
                           <div 

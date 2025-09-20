@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
  
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
@@ -15,7 +16,8 @@ function getGlobalCriteria() {
     commentWeight: 500,
     likeWeight: 150,
     timeRange: '',
-    viralMethod: 'subscribers'
+    viralMethod: 'subscribers',
+    hideCta: false
   }
 }
 
@@ -37,7 +39,7 @@ export function CriteriaPage() {
         setCriteria(prev => ({ ...prev, ...parsed }))
       } else {
         // Default to 120 days on first load
-        const initial = { ...criteria, timeRange: '120', viralMethod: 'subscribers' }
+        const initial = { ...criteria, timeRange: '120', viralMethod: 'subscribers', hideCta: false }
         setCriteria(initial)
         if (typeof window !== 'undefined') {
           localStorage.setItem('youtube-global-criteria', JSON.stringify(initial))
@@ -52,7 +54,7 @@ export function CriteriaPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleCriteriaChange = (field: string, value: number | string) => {
+  const handleCriteriaChange = (field: string, value: any) => {
     const newCriteria = { ...criteria, [field]: value }
     setCriteria(newCriteria)
     
@@ -126,6 +128,13 @@ export function CriteriaPage() {
                       </SelectContent>
                     </Select>
                   </div>
+                <div className="flex items-center justify-between pt-2">
+                  <div className="flex flex-col gap-0.5">
+                    <Label htmlFor="hide-cta">Hide CTA-bait videos globally</Label>
+                    <span className="text-xs text-muted-foreground">Filter videos where comments look like mass call-to-action responses</span>
+                  </div>
+                  <Switch id="hide-cta" checked={!!criteria.hideCta} onCheckedChange={(val) => handleCriteriaChange('hideCta', !!val)} />
+                </div>
                   <p className="text-xs text-muted-foreground">
                     Videos need {criteria.viralMultiplier}x+ more views than {criteria.viralMethod === 'avgViews' ? 'average views' : 'subscriber count'} to be considered viral
                   </p>
@@ -254,7 +263,7 @@ export function CriteriaPage() {
             <Button 
               variant="outline" 
               onClick={() => {
-                const defaultCriteria = { viralMultiplier: 5, commentWeight: 500, likeWeight: 150, timeRange: '120', viralMethod: 'subscribers' }
+                const defaultCriteria = { viralMultiplier: 5, commentWeight: 500, likeWeight: 150, timeRange: '120', viralMethod: 'subscribers', hideCta: false }
                 setCriteria(defaultCriteria)
                 if (typeof window !== 'undefined') {
                   localStorage.setItem('youtube-global-criteria', JSON.stringify(defaultCriteria))

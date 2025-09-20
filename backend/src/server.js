@@ -180,6 +180,15 @@ function createServer() {
       const days = Number(req.query.days || DEFAULT_DAYS);
       const sinceIso = days < DEFAULT_DAYS ? new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString() : undefined;
       
+      const useHideCta = (() => {
+        if (req.query.hideCta != null) return (req.query.hideCta === '1' || req.query.hideCta === 'true');
+        try {
+          const gc = getSetting('globalCriteria');
+          if (gc) return !!JSON.parse(gc)?.hideCta;
+        } catch {}
+        return false;
+      })();
+
       const channelsWithViralCounts = listChannels().map(channel => ({
         ...channel,
         viralVideoCount: getViralVideoCount({ 
@@ -188,7 +197,8 @@ function createServer() {
           subscriberCount: channel.subscriberCount,
           viralMethod,
           viralMultiplier,
-          sinceIso
+          sinceIso,
+          excludeCta: useHideCta
         })
       }));
       
@@ -285,10 +295,13 @@ function createServer() {
       } catch {}
       const likeWeight = Number(req.query.likeWeight || 150);
       const commentWeight = Number(req.query.commentWeight || 500);
+      const excludeCta = (req.query.hideCta != null)
+        ? (req.query.hideCta === '1' || req.query.hideCta === 'true')
+        : (() => { try { const gc = getSetting('globalCriteria'); if (gc) return !!JSON.parse(gc)?.hideCta; } catch {}; return false; })();
       const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
       const trends = getChannelTrends({ channelId, sinceIso });
-      const top = getTopVideos({ channelId, sinceIso, likeWeight, commentWeight });
-      const special = getSpecialVideos({ channelId, avgViews: ch.avgViews, subscriberCount: ch.subscriberCount, viralMethod, sinceIso, viralMultiplier });
+      const top = getTopVideos({ channelId, sinceIso, likeWeight, commentWeight, excludeCta });
+      const special = getSpecialVideos({ channelId, avgViews: ch.avgViews, subscriberCount: ch.subscriberCount, viralMethod, sinceIso, viralMultiplier, excludeCta });
       res.json({ channel: ch, trends, top, special });
     } catch (e) {
       res.status(500).json({ error: e?.message || 'dashboard failed' });
@@ -305,7 +318,10 @@ function createServer() {
     const order = (req.query.order || 'desc').toString();
     const likeWeight = Number(req.query.likeWeight || 150);
     const commentWeight = Number(req.query.commentWeight || 500);
-    const { rows, total } = queryVideosAdvanced({ sinceIso, channelId, sort: 'engagement', order, page, pageSize, likeWeight, commentWeight });
+    const excludeCta = (req.query.hideCta != null)
+      ? (req.query.hideCta === '1' || req.query.hideCta === 'true')
+      : (() => { try { const gc = getSetting('globalCriteria'); if (gc) return !!JSON.parse(gc)?.hideCta; } catch {}; return false; })();
+    const { rows, total } = queryVideosAdvanced({ sinceIso, channelId, sort: 'engagement', order, page, pageSize, likeWeight, commentWeight, excludeCta });
     res.json({ total, page, pageSize, rows });
   });
 
@@ -394,8 +410,11 @@ function createServer() {
       const topicName = req.params.topicName;
       const page = Number(req.query.page || 1);
       const pageSize = Math.min(200, Number(req.query.pageSize || 50));
-      
-      const result = getVideosByTopic(topicName, { page, pageSize });
+      const excludeCta = (req.query.hideCta != null)
+        ? (req.query.hideCta === '1' || req.query.hideCta === 'true')
+        : (() => { try { const gc = getSetting('globalCriteria'); if (gc) return !!JSON.parse(gc)?.hideCta; } catch {}; return false; })();
+
+      const result = getVideosByTopic(topicName, { page, pageSize, excludeCta });
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: error.message || 'Failed to fetch videos for topic' });
@@ -424,9 +443,12 @@ function createServer() {
     try {
       // Get maxNodes from query parameter, default to 10, max 50
       const maxNodes = Math.min(Math.max(parseInt(req.query.maxNodes) || 10, 1), 500);
+      const excludeCta = (req.query.hideCta != null)
+        ? (req.query.hideCta === '1' || req.query.hideCta === 'true')
+        : (() => { try { const gc = getSetting('globalCriteria'); if (gc) return !!JSON.parse(gc)?.hideCta; } catch {}; return false; })();
       
       // Get the topic graph data (now returns { topics, relationships })
-      const { topics: topicObjects, relationships: calculatedRelationships } = getTopicGraph(10, 1, maxNodes);
+      const { topics: topicObjects, relationships: calculatedRelationships } = getTopicGraph(10, 1, maxNodes, excludeCta);
       
       // Define 20 good colors for categories
       const categoryColors = [

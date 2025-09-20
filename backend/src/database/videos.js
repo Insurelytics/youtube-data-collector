@@ -30,6 +30,7 @@ export function initVideosSchema() {
       audioPath TEXT,
       audioProcessedAt TEXT,
       transcriptionStatus TEXT DEFAULT 'pending',
+      hasCallToAction INTEGER DEFAULT 0,
       FOREIGN KEY(channelId) REFERENCES channels(id)
     );
 
@@ -55,6 +56,12 @@ export function initVideosSchema() {
   } catch (e) {
     // Column already exists, ignore
   }
+
+  try {
+    db.exec(`ALTER TABLE videos ADD COLUMN hasCallToAction INTEGER DEFAULT 0;`);
+  } catch (e) {
+    // Column already exists, ignore
+  }
 }
 
 export function upsertVideos(videos) {
@@ -65,12 +72,12 @@ export function upsertVideos(videos) {
       id, channelId, title, description, publishedAt, durationSeconds,
       viewCount, likeCount, commentCount, tags, thumbnails, raw, lastSyncedAt,
       platform, shortCode, displayUrl, localImageUrl, videoUrl, dimensions, mentions, takenAtTimestamp, transcription,
-      audioPath, audioProcessedAt, transcriptionStatus
+      audioPath, audioProcessedAt, transcriptionStatus, hasCallToAction
     ) VALUES (
       @id, @channelId, @title, @description, @publishedAt, @durationSeconds,
       @viewCount, @likeCount, @commentCount, @tags, @thumbnails, @raw, @lastSyncedAt,
       @platform, @shortCode, @displayUrl, @localImageUrl, @videoUrl, @dimensions, @mentions, @takenAtTimestamp, @transcription,
-      @audioPath, @audioProcessedAt, @transcriptionStatus
+      @audioPath, @audioProcessedAt, @transcriptionStatus, @hasCallToAction
     )
     ON CONFLICT(id) DO UPDATE SET
       title=excluded.title,
@@ -95,7 +102,8 @@ export function upsertVideos(videos) {
       transcription=excluded.transcription,
       audioPath=excluded.audioPath,
       audioProcessedAt=excluded.audioProcessedAt,
-      transcriptionStatus=excluded.transcriptionStatus
+      transcriptionStatus=excluded.transcriptionStatus,
+      hasCallToAction=excluded.hasCallToAction
   `);
 
   const toRow = (v) => ({
@@ -124,6 +132,7 @@ export function upsertVideos(videos) {
     audioPath: v.audioPath || null,
     audioProcessedAt: v.audioProcessedAt || null,
     transcriptionStatus: v.transcriptionStatus || 'pending',
+    hasCallToAction: v.hasCallToAction ? 1 : 0,
   });
 
   const tx = db.transaction((all) => {
@@ -168,12 +177,13 @@ export function queryVideos({ search, sort, order, page, pageSize }) {
   return { total, rows };
 }
 
-export function queryVideosAdvanced({ sinceIso, channelId, sort, order, page, pageSize, likeWeight = 150, commentWeight = 500 }) {
+export function queryVideosAdvanced({ sinceIso, channelId, sort, order, page, pageSize, likeWeight = 150, commentWeight = 500, excludeCta = false }) {
   const db = getDatabase();
   const clauses = [];
   const params = {};
   if (sinceIso) { clauses.push('publishedAt >= :sinceIso'); params.sinceIso = sinceIso; }
   if (channelId) { clauses.push('channelId = :channelId'); params.channelId = channelId; }
+  if (excludeCta) { clauses.push('COALESCE(hasCallToAction,0) = 0'); }
   const whereSql = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   const orderSql = order?.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
   const engagement = getEngagementSqlExpression(likeWeight, commentWeight);
@@ -187,7 +197,7 @@ export function queryVideosAdvanced({ sinceIso, channelId, sort, order, page, pa
   const rows = db.prepare(`
     SELECT id, channelId, title, description, publishedAt, durationSeconds,
            viewCount, likeCount, commentCount, thumbnails, 
-           platform, shortCode, displayUrl, localImageUrl, ${engagement} AS engagement
+           platform, shortCode, displayUrl, localImageUrl, hasCallToAction, ${engagement} AS engagement
     FROM videos
     ${whereSql}
     ORDER BY ${sortExpr} ${orderSql}
@@ -196,13 +206,13 @@ export function queryVideosAdvanced({ sinceIso, channelId, sort, order, page, pa
   return { total, rows };
 }
 
-export function getTopVideos({ channelId, sinceIso, likeWeight = 150, commentWeight = 500 }) {
+export function getTopVideos({ channelId, sinceIso, likeWeight = 150, commentWeight = 500, excludeCta = false }) {
   const db = getDatabase();
-  const where = `WHERE channelId = :channelId AND publishedAt >= :sinceIso`;
+  const where = `WHERE channelId = :channelId AND publishedAt >= :sinceIso${excludeCta ? ' AND COALESCE(hasCallToAction,0) = 0' : ''}`;
   const engagement = getEngagementSqlExpression(likeWeight, commentWeight);
   const views = db.prepare(`
     SELECT id, title, viewCount, likeCount, commentCount, publishedAt, thumbnails, 
-           platform, shortCode, displayUrl, localImageUrl, ${engagement} AS engagement
+           platform, shortCode, displayUrl, localImageUrl, hasCallToAction, ${engagement} AS engagement
     FROM videos
     ${where}
     ORDER BY ${engagement} DESC
@@ -232,7 +242,7 @@ export function getTimeFilteredAvgViews({ channelId, sinceIso }) {
   return result?.avgViews || 0;
 }
 
-export function getSpecialVideos({ channelId, avgViews, subscriberCount, viralMethod = 'subscribers', sinceIso, viralMultiplier = 5 }) {
+export function getSpecialVideos({ channelId, avgViews, subscriberCount, viralMethod = 'subscribers', sinceIso, viralMultiplier = 5, excludeCta = false }) {
   const db = getDatabase();
   
   // Use time-filtered average views for consistency
@@ -241,9 +251,9 @@ export function getSpecialVideos({ channelId, avgViews, subscriberCount, viralMe
   
   const rows = db.prepare(`
     SELECT id, title, viewCount, likeCount, commentCount, publishedAt, thumbnails,
-           platform, shortCode, displayUrl, localImageUrl
+           platform, shortCode, displayUrl, localImageUrl, hasCallToAction
     FROM videos
-    WHERE channelId = :channelId AND publishedAt >= :sinceIso AND COALESCE(viewCount,0) >= :threshold
+    WHERE channelId = :channelId AND publishedAt >= :sinceIso AND COALESCE(viewCount,0) >= :threshold${excludeCta ? ' AND COALESCE(hasCallToAction,0) = 0' : ''}
     ORDER BY COALESCE(viewCount,0) DESC
   `).all({ channelId, sinceIso, threshold: viralMultiplier * thresholdBase });
   return rows;

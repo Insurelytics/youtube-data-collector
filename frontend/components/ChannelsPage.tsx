@@ -42,10 +42,15 @@ function extractHandle(input: string): string {
   
   try {
     const url = new URL(trimmed)
-    const seg = url.pathname.split("/").filter(Boolean).pop() || ""
-    
-    // For Instagram and YouTube URLs, return the username/channel name directly
-    if (url.hostname.includes('instagram.com') || url.hostname.includes('youtube.com') || url.hostname.includes('youtu.be')) {
+    const parts = url.pathname.split("/").filter(Boolean)
+    // For Instagram profile URLs, the first segment is the username
+    if (url.hostname.includes('instagram.com')) {
+      const first = parts[0] || ""
+      return first || ""
+    }
+    // For YouTube, return the last relevant segment /@handle etc.
+    if (url.hostname.includes('youtube.com') || url.hostname.includes('youtu.be')) {
+      const seg = parts.pop() || ""
       return seg || ""
     }
     

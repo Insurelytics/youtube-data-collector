@@ -2,8 +2,9 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { User, TrendingUp, Network, Settings, Clock, Play, Users, LogOut } from 'lucide-react'
+import { User, TrendingUp, Network, Settings, Clock, Play, Users, LogOut, FolderOpen } from 'lucide-react'
 import { Button } from "@/components/ui/button"
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select"
 import { useJobs } from "@/hooks/useJobs"
 import { useState } from "react"
 import { useEffect } from "react"
@@ -62,25 +63,14 @@ export function Navigation() {
 
   const selectWorkspace = async (id: string) => {
     if (id === 'create') {
-      const idInput = prompt('Workspace id (no spaces):');
-      if (!idInput) return;
-      const name = prompt('Workspace display name:') || idInput;
-      try {
-        const res = await fetch('/api/workspaces', { 
-          method: 'POST', 
-          headers: { 'Content-Type': 'application/json' }, 
-          credentials: 'include',
-          body: JSON.stringify({ id: idInput, name }) 
-        });
-        if (res.ok) {
-          document.cookie = `workspaceId=${encodeURIComponent(idInput)}; Path=/`;
-          setCurrentWorkspace(idInput);
-          location.reload();
-        } else {
-          alert('Failed to create workspace');
-        }
-      } catch (e) { alert('Failed to create workspace'); }
-      return;
+      router.push('/workspaces/new')
+      return
+    }
+    if (id === 'none') {
+      document.cookie = `workspaceId=; Path=/; Max-Age=0`
+      setCurrentWorkspace(null)
+      router.push('/no-workspace')
+      return
     }
 
     // select existing
@@ -94,6 +84,7 @@ export function Navigation() {
     { href: "/suggested-channels", label: "Suggested Channels", icon: Users },
     { href: "/top-performing", label: "Top Performing", icon: TrendingUp },
     { href: "/connections-graph", label: "Connections Graph", icon: Network },
+    { href: "/drive", label: "Drive", icon: FolderOpen },
     { href: "/criteria", label: "Criteria", icon: Settings },
     // Note: Schedule tab is not currently in use; keeping code for potential future re-enable
     // { href: "/schedule", label: "Schedule", icon: Clock },
@@ -106,16 +97,6 @@ export function Navigation() {
 
         <nav className="flex items-center justify-between gap-2 overflow-x-auto">
           <div className="flex gap-2 overflow-x-auto">
-            <div className="flex items-center gap-2">
-              <label className="text-sm mr-2">Workspace:</label>
-              <select value={currentWorkspace || ''} onChange={(e) => selectWorkspace(e.target.value)} className="rounded border px-2 py-1 text-sm">
-                <option value="">-- none --</option>
-                {workspaces.map((w: any) => (
-                  <option key={w.id} value={w.id}>{w.name} ({w.id})</option>
-                ))}
-                <option value="create">+ create workspace...</option>
-              </select>
-            </div>
             {navItems.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href
@@ -134,16 +115,33 @@ export function Navigation() {
             })}
           </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleLogout}
-            disabled={isLoggingOut}
-            className="flex items-center gap-2 whitespace-nowrap"
-          >
-            <LogOut className="h-4 w-4" />
-            {isLoggingOut ? "Signing out..." : "Logout"}
-          </Button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Select value={currentWorkspace ?? undefined} onValueChange={(val) => selectWorkspace(val)}>
+                <SelectTrigger className="w-[220px] h-9 text-sm">
+                  <SelectValue placeholder="Select a workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">-- none --</SelectItem>
+                  {workspaces.map((w: any) => (
+                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                  ))}
+                  <SelectItem value="create">+ create workspace...</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="flex items-center gap-2 whitespace-nowrap"
+            >
+              <LogOut className="h-4 w-4" />
+              {isLoggingOut ? "Signing out..." : "Logout"}
+            </Button>
+          </div>
         </nav>
       </div>
     </div>

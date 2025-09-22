@@ -19,10 +19,12 @@ interface Workspace {
 
 export default function NoWorkspace() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
-  const [newWorkspaceId, setNewWorkspaceId] = useState("")
   const [newWorkspaceName, setNewWorkspaceName] = useState("")
   const [isCreating, setIsCreating] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [confirmName, setConfirmName] = useState("")
+  const [isDeleting, setIsDeleting] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -51,28 +53,38 @@ export default function NoWorkspace() {
   }
 
   const createWorkspace = async () => {
-    if (!newWorkspaceId.trim() || !newWorkspaceName.trim()) return
-    
+    if (!newWorkspaceName.trim()) return
     setIsCreating(true)
     try {
-      const res = await fetch('/api/workspaces', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ id: newWorkspaceId, name: newWorkspaceName })
-      })
-      
-      if (res.ok) {
-        document.cookie = `workspaceId=${encodeURIComponent(newWorkspaceId)}; Path=/`
-        router.push('/')
-      } else {
-        alert('Failed to create workspace')
-      }
-    } catch (error) {
-      console.error('Failed to create workspace:', error)
-      alert('Failed to create workspace')
+      const params = new URLSearchParams()
+      params.set('name', newWorkspaceName.trim())
+      router.push(`/workspaces/new?${params.toString()}`)
     } finally {
       setIsCreating(false)
+    }
+  }
+
+  const requestDelete = (id: string) => {
+    setDeleteId(id)
+    setConfirmName("")
+  }
+
+  const cancelDelete = () => {
+    setDeleteId(null)
+    setConfirmName("")
+  }
+
+  const confirmDelete = async (ws: Workspace) => {
+    if (confirmName !== ws.name) return
+    setIsDeleting(true)
+    try {
+      const res = await fetch(`/api/workspaces/${encodeURIComponent(ws.id)}`, { method: 'DELETE', credentials: 'include' })
+      if (res.ok) {
+        await fetchWorkspaces()
+        cancelDelete()
+      }
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -101,14 +113,49 @@ export default function NoWorkspace() {
             </CardHeader>
             <CardContent className="space-y-3">
               {workspaces.map((workspace) => (
-                <div key={workspace.id} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div>
-                    <div className="font-medium">{workspace.name}</div>
-                    <div className="text-sm text-gray-500">ID: {workspace.id}</div>
+                <div key={workspace.id} className="p-3 border rounded-lg space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-medium">{workspace.name}</div>
+                      <div className="text-sm text-gray-500">ID: {workspace.id}</div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button onClick={() => selectWorkspace(workspace.id)}>
+                        Select
+                      </Button>
+                      <Button variant="outline" onClick={() => requestDelete(workspace.id)}>
+                        Delete
+                      </Button>
+                    </div>
                   </div>
-                  <Button onClick={() => selectWorkspace(workspace.id)}>
-                    Select
-                  </Button>
+
+                  {deleteId === workspace.id && (
+                    <div className="space-y-2">
+                      <div className="text-sm font-semibold text-red-700 bg-red-50 border border-red-200 rounded p-3">
+                        WARNING: Deleting a workspace is permanent and cannot be undone. This will remove the
+                        workspace from your account and may make its associated data inaccessible. If you are not
+                        absolutely sure, click Cancel now.
+                      </div>
+                      <Label htmlFor={`confirm-${workspace.id}`}>Type "{workspace.name}" to confirm deletion</Label>
+                      <Input
+                        id={`confirm-${workspace.id}`}
+                        placeholder={workspace.name}
+                        value={confirmName}
+                        onChange={(e) => setConfirmName(e.target.value)}
+                      />
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" onClick={cancelDelete}>Cancel</Button>
+                        <Button
+                          variant="destructive"
+                          onClick={() => confirmDelete(workspace)}
+                          disabled={confirmName !== workspace.name || isDeleting}
+                        >
+                          {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Confirm Delete
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </CardContent>
@@ -124,16 +171,7 @@ export default function NoWorkspace() {
             <CardDescription>Create a new workspace to organize your data</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="workspace-id">Workspace ID</Label>
-              <Input
-                id="workspace-id"
-                placeholder="e.g., my-project"
-                value={newWorkspaceId}
-                onChange={(e) => setNewWorkspaceId(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-              />
-              <p className="text-xs text-gray-500">Only lowercase letters, numbers, and hyphens allowed</p>
-            </div>
+            
             <div className="space-y-2">
               <Label htmlFor="workspace-name">Display Name</Label>
               <Input
@@ -145,7 +183,7 @@ export default function NoWorkspace() {
             </div>
             <Button 
               onClick={createWorkspace} 
-              disabled={!newWorkspaceId.trim() || !newWorkspaceName.trim() || isCreating}
+              disabled={!newWorkspaceName.trim() || isCreating}
               className="w-full"
             >
               {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

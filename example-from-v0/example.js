@@ -1,291 +1,371 @@
 "use client"
 
-import { ArrowLeft, TrendingUp, TrendingDown, Flame, Star } from "lucide-react"
+import { useState } from "react"
+import { FolderOpen, FileSpreadsheet, Eye, CheckCircle, AlertCircle, ArrowLeft, Users, Instagram } from "lucide-react"
 import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 
-// Mock data for topics with multiplier values
-const topicsData = [
+const mockChannels = [
   {
-    id: 1,
-    topic: "Artificial Intelligence",
-    engagementMultiplier: 4.2,
-    videoCount: 45,
-    avgViews: 2800000,
-    trend: "up",
-    trendChange: 0.23,
-    category: "Technology",
-    isHot: true,
-    description: "AI content is generating 4x more engagement than average",
+    id: "1",
+    companyName: "TechReview Pro LLC",
+    channelName: "TechReview Pro",
+    handle: "@techreviewpro",
+    igHandle: "@techreviewpro_official",
+    followerCount: 2500000,
+    avatar: "/placeholder.svg?height=32&width=32&text=TR",
   },
   {
-    id: 2,
-    topic: "iPhone 15 Pro",
-    engagementMultiplier: 3.8,
-    videoCount: 23,
-    avgViews: 3200000,
-    trend: "up",
-    trendChange: 0.18,
-    category: "Technology",
-    isHot: true,
-    description: "Latest iPhone reviews driving massive engagement boost",
+    id: "2",
+    companyName: "Gaming Central Media",
+    channelName: "Gaming Central",
+    handle: "@gamingcentral",
+    igHandle: "@gamingcentral_yt",
+    followerCount: 1800000,
+    avatar: "/placeholder.svg?height=32&width=32&text=GC",
   },
   {
-    id: 3,
-    topic: "Gaming Setup",
-    engagementMultiplier: 2.4,
-    videoCount: 67,
-    avgViews: 1500000,
-    trend: "up",
-    trendChange: 0.12,
-    category: "Gaming",
-    isHot: false,
-    description: "Setup videos performing 2.4x better than baseline",
+    id: "3",
+    companyName: "Cooking Masters Studio",
+    channelName: "Cooking Masters",
+    handle: "@cookingmasters",
+    igHandle: "@cookingmasters_chef",
+    followerCount: 950000,
+    avatar: "/placeholder.svg?height=32&width=32&text=CM",
   },
   {
-    id: 4,
-    topic: "Recipe Tutorial",
-    engagementMultiplier: 1.8,
-    videoCount: 89,
-    avgViews: 850000,
-    trend: "stable",
-    trendChange: 0.02,
-    category: "Cooking",
-    isHot: false,
-    description: "Solid above-average performance in cooking content",
+    id: "4",
+    companyName: "Fitness First Productions",
+    channelName: "Fitness First",
+    handle: "@fitnessfirst",
+    igHandle: "@fitnessfirst_official",
+    followerCount: 1200000,
+    avatar: "/placeholder.svg?height=32&width=32&text=FF",
   },
   {
-    id: 5,
-    topic: "Budget Tech",
-    engagementMultiplier: 1.4,
-    videoCount: 34,
-    avgViews: 1200000,
-    trend: "down",
-    trendChange: -0.08,
-    category: "Technology",
-    isHot: false,
-    description: "Moderate engagement boost, trending down",
+    id: "5",
+    companyName: "Travel Adventures Inc",
+    channelName: "Travel Adventures",
+    handle: "@traveladventures",
+    igHandle: "@travel_adventures_world",
+    followerCount: 850000,
+    avatar: "/placeholder.svg?height=32&width=32&text=TA",
   },
   {
-    id: 6,
-    topic: "Streaming Tips",
-    engagementMultiplier: 1.2,
-    videoCount: 28,
-    avgViews: 950000,
-    trend: "up",
-    trendChange: 0.15,
-    category: "Gaming",
-    isHot: false,
-    description: "Slight engagement boost with growing interest",
+    id: "6",
+    companyName: "DIY Home Solutions",
+    channelName: "DIY Home",
+    handle: "@diyhome",
+    igHandle: "@diyhome_solutions",
+    followerCount: 650000,
+    avatar: "/placeholder.svg?height=32&width=32&text=DH",
+  },
+  {
+    id: "7",
+    companyName: "Music Makers Collective",
+    channelName: "Music Makers",
+    handle: "@musicmakers",
+    igHandle: "@musicmakers_collective",
+    followerCount: 1100000,
+    avatar: "/placeholder.svg?height=32&width=32&text=MM",
+  },
+  {
+    id: "8",
+    companyName: "Science Explained Ltd",
+    channelName: "Science Explained",
+    handle: "@scienceexplained",
+    igHandle: "@science_explained_yt",
+    followerCount: 750000,
+    avatar: "/placeholder.svg?height=32&width=32&text=SE",
+  },
+  {
+    id: "9",
+    companyName: "Fashion Forward Media",
+    channelName: "Fashion Forward",
+    handle: "@fashionforward",
+    igHandle: "@fashionforward_style",
+    followerCount: 920000,
+    avatar: "/placeholder.svg?height=32&width=32&text=FF",
+  },
+  {
+    id: "10",
+    companyName: "Pet Care Experts",
+    channelName: "Pet Care Pro",
+    handle: "@petcarepro",
+    igHandle: "@petcare_experts",
+    followerCount: 580000,
+    avatar: "/placeholder.svg?height=32&width=32&text=PC",
   },
 ]
 
-export default function HotTopics2Page() {
+export default function GoogleDrivePage() {
+  const [isConnected, setIsConnected] = useState(false)
+  const [selectedFolder, setSelectedFolder] = useState("")
+  const [showPreview, setShowPreview] = useState(false)
+  const [isCreating, setIsCreating] = useState(false)
+
   const formatNumber = (num: number) => {
     if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
     if (num >= 1000) return `${(num / 1000).toFixed(1)}K`
     return num.toString()
   }
 
-  const getMultiplierColor = (multiplier: number) => {
-    if (multiplier >= 1.2) return "text-green-600"
-    if (multiplier >= 0.8) return "text-yellow-600"
-    return "text-red-600"
+  const handleConnect = () => {
+    setIsConnected(true)
+    setSelectedFolder("YouTube Analytics Reports")
   }
 
-  const getCategoryColor = (category: string) => {
-    switch (category) {
-      case "Technology":
-        return "bg-blue-100 text-blue-800 border-blue-200"
-      case "Gaming":
-        return "bg-purple-100 text-purple-800 border-purple-200"
-      case "Cooking":
-        return "bg-orange-100 text-orange-800 border-orange-200"
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200"
-    }
+  const handleCreateSpreadsheet = () => {
+    setIsCreating(true)
+    setTimeout(() => {
+      setIsCreating(false)
+      // Mock success
+    }, 2000)
   }
 
-  const getTrendColor = (trend: string) => {
-    switch (trend) {
-      case "up":
-        return "text-green-600 bg-green-50"
-      case "down":
-        return "text-red-600 bg-red-50"
-      default:
-        return "text-gray-600 bg-gray-50"
-    }
-  }
-
-  const formatMultiplier = (multiplier: number) => {
-    return `${multiplier.toFixed(1)}x`
-  }
-
-  // Convert multiplier to progress bar percentage (capped at 5x for display)
-  const getProgressValue = (multiplier: number) => {
-    return Math.min((multiplier / 5) * 100, 100)
-  }
+  const totalFollowers = mockChannels.reduce((sum, channel) => sum + channel.followerCount, 0)
+  const topChannel = mockChannels.reduce((prev, current) =>
+    prev.followerCount > current.followerCount ? prev : current,
+  )
 
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto p-6">
         {/* Header */}
-        <div className="mb-8">
-          <Link href="/hot-topics">
-            <Button variant="ghost" className="mb-4">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Hot Topics
+        <div className="flex items-center gap-4 mb-8">
+          <Link href="/">
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
-
-          <div className="flex items-center gap-3 mb-2">
-            <h1 className="text-3xl font-bold">Hot Topics - Visual Cards</h1>
-          </div>
-          <p className="text-muted-foreground">
-            Visual card layout showing engagement multipliers and trending indicators
-          </p>
-        </div>
-
-        {/* Hot Topics Section */}
-        <div className="mb-8">
-          <div className="flex items-center gap-2 mb-4">
-            <Flame className="h-6 w-6 text-orange-500" />
-            <h2 className="text-2xl font-semibold">High Impact Topics</h2>
-          </div>
-          <div className="grid gap-6 md:grid-cols-2">
-            {topicsData
-              .filter((topic) => topic.isHot)
-              .map((topic) => (
-                <Card
-                  key={topic.id}
-                  className="relative overflow-hidden border-2 border-orange-200 bg-gradient-to-br from-orange-50 to-red-50"
-                >
-                  <div className="absolute top-2 right-2">
-                    <Badge className="bg-orange-500 text-white">
-                      <Flame className="h-3 w-3 mr-1" />
-                      Hot
-                    </Badge>
-                  </div>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <CardTitle className="text-xl">{topic.topic}</CardTitle>
-                        <CardDescription className="mt-1">{topic.description}</CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className={getCategoryColor(topic.category)}>
-                        {topic.category}
-                      </Badge>
-                      <Badge variant="outline" className={getTrendColor(topic.trend)}>
-                        {topic.trend === "up" ? (
-                          <TrendingUp className="h-3 w-3 mr-1" />
-                        ) : (
-                          <TrendingDown className="h-3 w-3 mr-1" />
-                        )}
-                        {topic.trendChange > 0 ? "+" : ""}
-                        {(topic.trendChange * 100).toFixed(0)}%
-                      </Badge>
-                    </div>
-
-                    <div className="space-y-3">
-                      <div>
-                        <div className="flex justify-between text-sm mb-1">
-                          <span>Engagement Multiplier</span>
-                          <span className={`font-semibold ${getMultiplierColor(topic.engagementMultiplier)}`}>
-                            {formatMultiplier(topic.engagementMultiplier)}
-                          </span>
-                        </div>
-                        <Progress value={getProgressValue(topic.engagementMultiplier)} className="h-2" />
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {topic.engagementMultiplier >= 1.2
-                            ? "Above Average"
-                            : topic.engagementMultiplier >= 0.8
-                              ? "Near Average"
-                              : "Below Average"}
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <p className="text-muted-foreground">Videos</p>
-                          <p className="font-semibold">{topic.videoCount}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Avg Views</p>
-                          <p className="font-semibold">{formatNumber(topic.avgViews)}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+          <div>
+            <h1 className="text-3xl font-bold mb-2">Google Drive Integration</h1>
+            <p className="text-muted-foreground">Export your channel analytics data to Google Sheets</p>
           </div>
         </div>
 
-        {/* All Topics Section */}
-        <div>
-          <div className="flex items-center gap-2 mb-4">
-            <Star className="h-6 w-6 text-blue-500" />
-            <h2 className="text-2xl font-semibold">All Topics</h2>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {topicsData.map((topic) => (
-              <Card key={topic.id} className="hover:shadow-md transition-shadow">
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <CardTitle className="text-lg">{topic.topic}</CardTitle>
-                    <Badge variant="outline" className={getCategoryColor(topic.category)}>
-                      {topic.category}
-                    </Badge>
+        {/* Connection Status */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FolderOpen className="h-5 w-5" />
+              Google Drive Connection
+            </CardTitle>
+            <CardDescription>Connect your Google Drive account to export channel data</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!isConnected ? (
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <AlertCircle className="h-4 w-4" />
+                  <span>Not connected</span>
+                </div>
+                <Button onClick={handleConnect} className="flex items-center gap-2">
+                  <FolderOpen className="h-4 w-4" />
+                  Connect Google Drive
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-green-600">
+                  <CheckCircle className="h-4 w-4" />
+                  <span>Connected to Google Drive</span>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="flex-1">
+                    <label className="text-sm font-medium mb-2 block">Selected Folder</label>
+                    <Input
+                      value={selectedFolder}
+                      onChange={(e) => setSelectedFolder(e.target.value)}
+                      placeholder="Enter folder name"
+                    />
                   </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span>Multiplier</span>
-                      <span className={`font-semibold ${getMultiplierColor(topic.engagementMultiplier)}`}>
-                        {formatMultiplier(topic.engagementMultiplier)}
-                      </span>
-                    </div>
-                    <Progress value={getProgressValue(topic.engagementMultiplier)} className="h-1.5" />
-                  </div>
+                  <Button variant="outline" className="mt-6 bg-transparent">
+                    Browse Folders
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-                  <div className="flex items-center justify-between text-sm">
+        {/* Spreadsheet Creation */}
+        {isConnected && (
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileSpreadsheet className="h-5 w-5" />
+                Create Channel Data Spreadsheet
+              </CardTitle>
+              <CardDescription>
+                Generate a spreadsheet with channel information including company names, Instagram handles, and follower
+                counts
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">{mockChannels.length}</Badge>
+                    <span>Total channels</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">{formatNumber(totalFollowers)}</Badge>
+                    <span>Combined followers</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">4</Badge>
+                    <span>Data columns</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Dialog open={showPreview} onOpenChange={setShowPreview}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" className="flex items-center gap-2 bg-transparent">
+                        <Eye className="h-4 w-4" />
+                        Preview Data
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle>Spreadsheet Preview</DialogTitle>
+                        <DialogDescription>
+                          Preview of the channel data that will be exported to Google Sheets
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="mt-4">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Channel</TableHead>
+                              <TableHead>Company Name</TableHead>
+                              <TableHead>Instagram Handle</TableHead>
+                              <TableHead>Follower Count</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {mockChannels.map((channel) => (
+                              <TableRow key={channel.id}>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    <Avatar className="h-6 w-6">
+                                      <AvatarImage src={channel.avatar || "/placeholder.svg"} />
+                                      <AvatarFallback className="text-xs">
+                                        {channel.channelName.slice(0, 2)}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div>
+                                      <div className="font-medium">{channel.channelName}</div>
+                                      <div className="text-xs text-muted-foreground">{channel.handle}</div>
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="font-medium">{channel.companyName}</TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-1">
+                                    <Instagram className="h-3 w-3 text-muted-foreground" />
+                                    <span className="text-sm">{channel.igHandle}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-1">
+                                    <Users className="h-3 w-3 text-muted-foreground" />
+                                    <span className="font-medium">{formatNumber(channel.followerCount)}</span>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+
+                  <Button onClick={handleCreateSpreadsheet} disabled={isCreating} className="flex items-center gap-2">
+                    {isCreating ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        Creating...
+                      </>
+                    ) : (
+                      <>
+                        <FileSpreadsheet className="h-4 w-4" />
+                        Create Spreadsheet
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Quick Stats */}
+        {isConnected && (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Top Channel</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-start gap-3">
+                  <Avatar className="h-12 w-12">
+                    <AvatarImage src={topChannel.avatar || "/placeholder.svg"} />
+                    <AvatarFallback>{topChannel.channelName.slice(0, 2)}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-medium text-sm leading-tight mb-1">{topChannel.channelName}</h4>
+                    <p className="text-xs text-muted-foreground mb-2">{topChannel.companyName}</p>
                     <div className="flex items-center gap-1">
-                      {topic.trend === "up" ? (
-                        <TrendingUp className="h-3 w-3 text-green-500" />
-                      ) : topic.trend === "down" ? (
-                        <TrendingDown className="h-3 w-3 text-red-500" />
-                      ) : (
-                        <div className="h-3 w-3" />
-                      )}
-                      <span
-                        className={
-                          topic.trend === "up"
-                            ? "text-green-600"
-                            : topic.trend === "down"
-                              ? "text-red-600"
-                              : "text-gray-600"
-                        }
-                      >
-                        {topic.trendChange > 0 ? "+" : ""}
-                        {(topic.trendChange * 100).toFixed(0)}%
-                      </span>
+                      <Users className="h-3 w-3 text-muted-foreground" />
+                      <span className="text-sm font-medium">{formatNumber(topChannel.followerCount)} followers</span>
                     </div>
-                    <span className="text-muted-foreground">{topic.videoCount} videos</span>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Total Reach</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold mb-2">{formatNumber(totalFollowers)}</div>
+                <p className="text-sm text-muted-foreground">
+                  Combined followers across {mockChannels.length} channels
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Export Status</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-2 mb-2">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <span className="text-sm font-medium">Ready to Export</span>
+                </div>
+                <p className="text-sm text-muted-foreground">Channel data prepared for Google Sheets</p>
+              </CardContent>
+            </Card>
           </div>
-        </div>
+        )}
       </div>
     </div>
   )

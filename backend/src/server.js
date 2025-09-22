@@ -23,6 +23,7 @@ import {
   getJobStatus, 
   setSetting, 
   getSettings, 
+  getSetting, 
   getTopicStats, 
   getVideosByTopic, 
   cleanupOrphanedRunningJobs,
@@ -30,14 +31,24 @@ import {
   getVideosNeedingTranscription,
   listSuggestedChannels,
   getSuggestedChannelsBySearchTerm,
-  removeSuggestedChannel
+  removeSuggestedChannel,
+  listWorkspaces,
+  createWorkspace,
+  removeWorkspace
 } from './database/index.js';
+import { initChannelsSchema } from './database/channels.js';
+import { initVideosSchema } from './database/videos.js';
+import { initJobsSchema } from './database/jobs.js';
+import { initTopicsSchema } from './database/topics.js';
+import { initSettingsSchema } from './database/settings.js';
+import { initSuggestedChannelsSchema } from './database/suggested-channels.js';
 import { getTopicRanking, getTopicGraph, CATEGORY_THRESHOLD } from './topics/topic-math.js';
 
 import { getChannelByHandle as getYouTubeChannelByHandle } from './scraping/youtube.js';
 import { getChannelByHandle as getInstagramChannelByHandle } from './scraping/instagram.js';
 import QueueManager from './scraping/queue-manager.js';
-import { initScheduler, triggerScheduledSync } from './scraping/schedule.js';
+// Note: Scheduler is not currently in use; imports kept for potential future re-enable
+// import { initScheduler, triggerScheduledSync } from './scraping/schedule.js';
 import { processAudioDownloads, processTranscriptions } from './scraping/scraping-orchestrator.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -56,20 +67,152 @@ if (!fs.existsSync(IMAGES_DIR)) {
 }
 
 
-function createServer() {
+async function createServer() {
   initializeDatabase();
 
-  // Clean up any jobs that were left in 'running' state from previous server sessions
-  cleanupOrphanedRunningJobs();
+  // Clean up any jobs that were left in 'running' or 'pending' state across all workspaces
+  try {
+    const { setRequestWorkspace } = await import('./database/connection.js');
+    const workspaces = [{ id: 'default' }, ...listWorkspaces().map(w => ({ id: w.id }))];
+    for (const ws of workspaces) {
+      try {
+        setRequestWorkspace(ws.id);
+        cleanupOrphanedRunningJobs();
+      } catch (e) {
+        console.warn(`Job cleanup skipped for workspace '${ws.id}':`, e?.message || e);
+      }
+    }
+    // Restore to default workspace after cleanup
+    setRequestWorkspace('default');
+  } catch (e) {
+    console.warn('Global job cleanup failed:', e?.message || e);
+  }
 
   // Initialize queue manager
   const queueManager = new QueueManager();
 
-  // Initialize scheduler
-  initScheduler();
+  // Initialize scheduler (disabled / not in use)
+  // initScheduler();
 
   const app = express();
   app.use(express.json());
+  // Workspace selector middleware: read from header or cookie and set DB workspace
+  const { setRequestWorkspace, initializeWorkspaceDatabase } = await import('./database/connection.js');
+
+  app.use((req, _res, next) => {
+    const header = req.headers['x-workspace-id'];
+    const cookies = parseCookies(req.headers.cookie || '');
+    const cookieWorkspace = cookies.workspaceId;
+    const workspaceId = (header || cookieWorkspace || 'default').toString();
+    setRequestWorkspace(workspaceId);
+    req.workspaceId = workspaceId;
+    next();
+  });
+  
+  // Simple in-memory session store
+  const activeTokens = new Set();
+
+  // Parse cookies util (no external deps)
+  function parseCookies(cookieHeader) {
+    const result = {};
+    if (!cookieHeader) return result;
+    cookieHeader.split(';').forEach(part => {
+      const idx = part.indexOf('=');
+      if (idx > -1) {
+        const key = part.slice(0, idx).trim();
+        const val = decodeURIComponent(part.slice(idx + 1).trim());
+        result[key] = val;
+      }
+    });
+    return result;
+  }
+
+  // Auth middleware for all /api routes except login
+  function authMiddleware(req, res, next) {
+    if (process.env.DEV_NO_AUTH === 'true') return next();
+    if (req.path === '/api/login') return next();
+    const cookies = parseCookies(req.headers.cookie || '');
+    const token = cookies.authToken;
+    if (token && activeTokens.has(token)) return next();
+    res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // Login route (unprotected)
+  app.post('/api/login', (req, res) => {
+    const { username, password } = req.body || {};
+    const expectedUser = process.env.ADMIN_USERNAME;
+    const expectedPass = process.env.ADMIN_PASSWORD;
+    if (!expectedUser || !expectedPass) {
+      return res.status(500).json({ error: 'Server auth not configured' });
+    }
+    if (username === expectedUser && password === expectedPass) {
+      const token = crypto.randomBytes(24).toString('hex');
+      activeTokens.add(token);
+      const cookie = `authToken=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${60 * 60 * 24 * 7}`; // 7 days
+      res.setHeader('Set-Cookie', cookie);
+      return res.json({ ok: true });
+    }
+    return res.status(401).json({ error: 'Invalid credentials' });
+  });
+
+  // Logout route
+  app.post('/api/logout', (req, res) => {
+    const cookies = parseCookies(req.headers.cookie || '');
+    const token = cookies.authToken;
+    if (token) activeTokens.delete(token);
+    res.setHeader('Set-Cookie', 'authToken=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
+    res.json({ ok: true });
+  });
+  
+  // Apply auth for all API routes after login/logout are defined
+  app.use(authMiddleware);
+
+  // Workspace management endpoints (protected)
+  app.get('/api/workspaces', (req, res) => {
+    try {
+      res.json({ workspaces: listWorkspaces() });
+    } catch (err) {
+      res.status(500).json({ error: err?.message || 'Failed to list workspaces' });
+    }
+  });
+
+  app.post('/api/workspaces', (req, res) => {
+    try {
+      const { id, name } = req.body || {};
+      if (!id || !name) return res.status(400).json({ error: 'id and name required' });
+      // Initialize the DB file and run schema init on it
+      const db = initializeWorkspaceDatabase(id);
+      
+      // Set the workspace context temporarily to initialize schemas
+      setRequestWorkspace(id);
+      
+      initChannelsSchema();
+      initVideosSchema();
+      initJobsSchema();
+      initTopicsSchema();
+      initSettingsSchema();
+      initSuggestedChannelsSchema();
+      
+      // Restore to request workspace
+      setRequestWorkspace(req.workspaceId);
+      
+      createWorkspace({ id, name, dbFile: `data/${id}.sqlite` });
+      res.json({ ok: true, id });
+    } catch (err) {
+      res.status(500).json({ error: err?.message || 'Failed to create workspace' });
+    }
+  });
+
+  app.delete('/api/workspaces/:id', (req, res) => {
+    try {
+      const { id } = req.params;
+      // Note: do not delete DB file automatically; just remove registry row for now
+      removeWorkspace(id);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err?.message || 'Failed to remove workspace' });
+    }
+  });
   
   // Serve static images
   app.use('/api/images', express.static(IMAGES_DIR));
@@ -102,7 +245,7 @@ function createServer() {
 
     try {
       // Create a sync job instead of processing directly
-      const jobId = createSyncJob({ handle, platform, sinceDays });
+      const jobId = createSyncJob({ handle, platform, sinceDays, isInitialScrape: 0, workspaceId: req.workspaceId });
       res.json({ ok: true, jobId, message: 'Sync job queued' });
     } catch (err) {
       res.status(500).json({ error: err?.message || 'Failed to queue sync job' });
@@ -166,16 +309,38 @@ function createServer() {
       
       // Add viral video counts to each channel
       const viralMultiplier = Number(req.query.viralMultiplier || 5);
+      let viralMethod = 'subscribers';
+      try {
+        const gc = getSetting('globalCriteria');
+        if (gc) {
+          const parsed = JSON.parse(gc);
+          if (parsed.viralMethod === 'avgViews' || parsed.viralMethod === 'subscribers') {
+            viralMethod = parsed.viralMethod;
+          }
+        }
+      } catch {}
       const days = Number(req.query.days || DEFAULT_DAYS);
       const sinceIso = days < DEFAULT_DAYS ? new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString() : undefined;
       
+      const useHideCta = (() => {
+        if (req.query.hideCta != null) return (req.query.hideCta === '1' || req.query.hideCta === 'true');
+        try {
+          const gc = getSetting('globalCriteria');
+          if (gc) return !!JSON.parse(gc)?.hideCta;
+        } catch {}
+        return false;
+      })();
+
       const channelsWithViralCounts = listChannels().map(channel => ({
         ...channel,
         viralVideoCount: getViralVideoCount({ 
           channelId: channel.id, 
           avgViews: channel.avgViews, 
+          subscriberCount: channel.subscriberCount,
+          viralMethod,
           viralMultiplier,
-          sinceIso
+          sinceIso,
+          excludeCta: useHideCta
         })
       }));
       
@@ -199,7 +364,7 @@ function createServer() {
 
     try {
       // Create a sync job instead of processing directly
-      const jobId = createSyncJob({ handle, platform, sinceDays: MAX_SYNC_DAYS });
+      const jobId = createSyncJob({ handle, platform, sinceDays: MAX_SYNC_DAYS, isInitialScrape: 1, workspaceId: req.workspaceId });
       res.json({ ok: true, jobId, message: 'Channel sync job queued' });
     } catch (e) {
       res.status(500).json({ error: e?.message || 'Failed to queue channel sync job' });
@@ -215,6 +380,8 @@ function createServer() {
   app.get('/api/suggested-channels', (req, res) => {
     try {
       const searchTerm = req.query.searchTerm;
+      const minFollowers = Number(req.query.minFollowers || 1000);
+      const maxFollowers = Number(req.query.maxFollowers || 1000000);
       let channels;
       
       if (searchTerm) {
@@ -222,8 +389,18 @@ function createServer() {
       } else {
         channels = listSuggestedChannels();
       }
+
+      // Apply followers filter (include nulls only if no bounds provided)
+      const filtered = channels.filter((c) => {
+        const count = typeof c.followersCount === 'number' ? c.followersCount : (
+          c.followersCount != null ? Number(c.followersCount) : null
+        );
+        if (count == null) return false; // exclude unknown follower counts when filtering
+        if (!Number.isFinite(count)) return false;
+        return count >= minFollowers && count <= maxFollowers;
+      });
       
-      res.json(channels);
+      res.json(filtered);
     } catch (error) {
       console.error('Error fetching suggested channels:', error);
       res.status(500).json({ error: 'Failed to fetch suggested channels' });
@@ -240,21 +417,6 @@ function createServer() {
     }
   });
 
-  // Generate new suggested channels
-  app.post('/api/suggest-channels', async (req, res) => {
-    try {
-      const { suggestChannels } = await import('./scraping/suggest-channels.js');
-      const result = await suggestChannels();
-      res.json(result);
-    } catch (error) {
-      console.error('Error generating suggested channels:', error);
-      res.status(500).json({
-        error: 'Failed to generate suggested channels',
-        message: error.message
-      });
-    }
-  });
-
   // Channel dashboard data
   app.get('/api/channels/:id/dashboard', (req, res) => {
     try {
@@ -263,12 +425,25 @@ function createServer() {
       if (!ch) return res.status(404).json({ error: 'not found' });
       const days = Number(req.query.days || DEFAULT_DAYS);
       const viralMultiplier = Number(req.query.viralMultiplier || 5);
+      let viralMethod = 'subscribers';
+      try {
+        const gc = getSetting('globalCriteria');
+        if (gc) {
+          const parsed = JSON.parse(gc);
+          if (parsed.viralMethod === 'avgViews' || parsed.viralMethod === 'subscribers') {
+            viralMethod = parsed.viralMethod;
+          }
+        }
+      } catch {}
       const likeWeight = Number(req.query.likeWeight || 150);
       const commentWeight = Number(req.query.commentWeight || 500);
+      const excludeCta = (req.query.hideCta != null)
+        ? (req.query.hideCta === '1' || req.query.hideCta === 'true')
+        : (() => { try { const gc = getSetting('globalCriteria'); if (gc) return !!JSON.parse(gc)?.hideCta; } catch {}; return false; })();
       const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
       const trends = getChannelTrends({ channelId, sinceIso });
-      const top = getTopVideos({ channelId, sinceIso, likeWeight, commentWeight });
-      const special = getSpecialVideos({ channelId, avgViews: ch.avgViews, sinceIso, viralMultiplier });
+      const top = getTopVideos({ channelId, sinceIso, likeWeight, commentWeight, excludeCta });
+      const special = getSpecialVideos({ channelId, avgViews: ch.avgViews, subscriberCount: ch.subscriberCount, viralMethod, sinceIso, viralMultiplier, excludeCta });
       res.json({ channel: ch, trends, top, special });
     } catch (e) {
       res.status(500).json({ error: e?.message || 'dashboard failed' });
@@ -285,7 +460,10 @@ function createServer() {
     const order = (req.query.order || 'desc').toString();
     const likeWeight = Number(req.query.likeWeight || 150);
     const commentWeight = Number(req.query.commentWeight || 500);
-    const { rows, total } = queryVideosAdvanced({ sinceIso, channelId, sort: 'engagement', order, page, pageSize, likeWeight, commentWeight });
+    const excludeCta = (req.query.hideCta != null)
+      ? (req.query.hideCta === '1' || req.query.hideCta === 'true')
+      : (() => { try { const gc = getSetting('globalCriteria'); if (gc) return !!JSON.parse(gc)?.hideCta; } catch {}; return false; })();
+    const { rows, total } = queryVideosAdvanced({ sinceIso, channelId, sort: 'engagement', order, page, pageSize, likeWeight, commentWeight, excludeCta });
     res.json({ total, page, pageSize, rows });
   });
 
@@ -335,6 +513,7 @@ function createServer() {
           job.progress_total = progress.progressTotal;
         }
       }
+      // Pass-through includes is_initial_scrape from DB
       
       res.json(job);
     } catch (error) {
@@ -349,14 +528,15 @@ function createServer() {
     });
   });
 
-  app.post('/api/schedule/trigger', async (req, res) => {
-    try {
-      await triggerScheduledSync();
-      res.json({ ok: true, message: 'Scheduled sync triggered successfully' });
-    } catch (error) {
-      res.status(500).json({ error: error.message || 'Failed to trigger scheduled sync' });
-    }
-  });
+  // Manual schedule trigger endpoint (disabled / not in use)
+  // app.post('/api/schedule/trigger', async (req, res) => {
+  //   try {
+  //     await triggerScheduledSync();
+  //     res.json({ ok: true, message: 'Scheduled sync triggered successfully' });
+  //   } catch (error) {
+  //     res.status(500).json({ error: error.message || 'Failed to trigger scheduled sync' });
+  //   }
+  // });
 
   // Topics API endpoints
   app.get('/api/topics', (req, res) => {
@@ -373,8 +553,11 @@ function createServer() {
       const topicName = req.params.topicName;
       const page = Number(req.query.page || 1);
       const pageSize = Math.min(200, Number(req.query.pageSize || 50));
-      
-      const result = getVideosByTopic(topicName, { page, pageSize });
+      const excludeCta = (req.query.hideCta != null)
+        ? (req.query.hideCta === '1' || req.query.hideCta === 'true')
+        : (() => { try { const gc = getSetting('globalCriteria'); if (gc) return !!JSON.parse(gc)?.hideCta; } catch {}; return false; })();
+
+      const result = getVideosByTopic(topicName, { page, pageSize, excludeCta });
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: error.message || 'Failed to fetch videos for topic' });
@@ -403,9 +586,12 @@ function createServer() {
     try {
       // Get maxNodes from query parameter, default to 10, max 50
       const maxNodes = Math.min(Math.max(parseInt(req.query.maxNodes) || 10, 1), 500);
+      const excludeCta = (req.query.hideCta != null)
+        ? (req.query.hideCta === '1' || req.query.hideCta === 'true')
+        : (() => { try { const gc = getSetting('globalCriteria'); if (gc) return !!JSON.parse(gc)?.hideCta; } catch {}; return false; })();
       
       // Get the topic graph data (now returns { topics, relationships })
-      const { topics: topicObjects, relationships: calculatedRelationships } = getTopicGraph(10, 1, maxNodes);
+      const { topics: topicObjects, relationships: calculatedRelationships } = getTopicGraph(10, 1, maxNodes, excludeCta);
       
       // Define 20 good colors for categories
       const categoryColors = [

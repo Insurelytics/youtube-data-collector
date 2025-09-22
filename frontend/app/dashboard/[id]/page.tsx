@@ -1,9 +1,10 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import React, { useEffect, useState } from "react"
 import { ArrowLeft, Users, Eye, MessageCircle, Heart, TrendingUp, Calendar, Play, ExternalLink, Clock } from 'lucide-react'
 import Link from "next/link"
 import { useParams } from "next/navigation"
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute"
 
 
 import { Button } from "@/components/ui/button"
@@ -93,6 +94,13 @@ function cleanTitle(title: string): string {
   return title.replace(/#\w+/g, '').replace(/\s+/g, ' ').trim()
 }
 
+function CtaBadge({ video }: { video: any }) {
+  if (!video?.hasCallToAction) return null
+  return (
+    <Badge variant="destructive" className="ml-2">CTA</Badge>
+  )
+}
+
 // Time range options with their corresponding days
 const TIME_RANGES = [
   { label: "7 days", value: "7", days: 7 },
@@ -116,7 +124,8 @@ function getGlobalCriteria() {
     viralMultiplier: 5,
     commentWeight: 500,
     likeWeight: 150,
-    timeRange: '90'
+    timeRange: '90',
+    viralMethod: 'subscribers'
   }
 }
 
@@ -152,10 +161,10 @@ export default function ChannelDashboard() {
   }, [])
 
   const isViralVideo = (video: any) => {
-    if (!channel?.avgViews) return false
-    const avgViews = Number(channel.avgViews)
+    if (!channel) return false
+    const base = criteria.viralMethod === 'avgViews' ? Number(channel.avgViews) : Number(channel.subscriberCount)
     const viewCount = Number(video.viewCount || 0)
-    return viewCount >= avgViews * criteria.viralMultiplier
+    return base > 0 && viewCount >= base * criteria.viralMultiplier
   }
 
   useEffect(() => {
@@ -197,15 +206,20 @@ export default function ChannelDashboard() {
   }, [id, criteria])
 
   if (loading) return (
-    <div className="min-h-screen bg-background"><div className="container mx-auto p-6">Loading…</div></div>
+    <ProtectedRoute>
+      <div className="min-h-screen bg-background"><div className="container mx-auto p-6">Loading…</div></div>
+    </ProtectedRoute>
   )
 
   if (!channel) return (
-    <div className="min-h-screen bg-background"><div className="container mx-auto p-6">Channel not found</div></div>
+    <ProtectedRoute>
+      <div className="min-h-screen bg-background"><div className="container mx-auto p-6">Channel not found</div></div>
+    </ProtectedRoute>
   )
 
   return (
-    <div className="min-h-screen bg-background">
+    <ProtectedRoute>
+      <div className="min-h-screen bg-background">
       <div className="container mx-auto p-6">
         {/* Header */}
         <div className="mb-6">
@@ -291,7 +305,7 @@ export default function ChannelDashboard() {
               <TabsTrigger value="recent">All Videos</TabsTrigger>
             </TabsList>
             
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="flex items-center gap-4 text-sm text-muted-foreground">
               <Clock className="h-4 w-4" />
               <span>Time Range: {TIME_RANGES.find(r => r.value === criteria.timeRange)?.label || 'All time'}</span>
               <span className="text-xs">(set in global criteria)</span>
@@ -324,6 +338,7 @@ export default function ChannelDashboard() {
                           <a href={getPostUrl(video)} target="_blank" rel="noopener noreferrer" className="hover:underline">
                             {cleanTitle(video.title)}
                           </a>
+                          <CtaBadge video={video} />
                         </h3>
                         <p className="text-sm text-muted-foreground">{formatDate(video.publishedAt)}</p>
                       </div>
@@ -354,7 +369,7 @@ export default function ChannelDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle>Viral Videos</CardTitle>
-                <CardDescription>Videos with {criteria.viralMultiplier}x+ more views than average views from the selected time period</CardDescription>
+                <CardDescription>Videos with {criteria.viralMultiplier}x+ more views than {criteria.viralMethod === 'avgViews' ? 'average views' : 'subscriber count'} from the selected time period</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -375,10 +390,11 @@ export default function ChannelDashboard() {
                           <a href={getPostUrl(video)} target="_blank" rel="noopener noreferrer" className="hover:underline">
                             {cleanTitle(video.title)}
                           </a>
+                          <CtaBadge video={video} />
                         </h3>
                         <p className="text-sm text-muted-foreground">{formatDate(video.publishedAt)}</p>
                         <Badge variant="destructive" className="mt-1">
-                          {criteria.viralMultiplier}x+ average views multiplier
+                          {criteria.viralMultiplier}x+ {criteria.viralMethod === 'avgViews' ? 'average views' : 'subscribers'} multiplier
                         </Badge>
                       </div>
                       <div className="text-right space-y-1">
@@ -438,6 +454,7 @@ export default function ChannelDashboard() {
                                 <a href={getPostUrl(video)} target="_blank" rel="noopener noreferrer" className="hover:underline">
                                   {cleanTitle(video.title)}
                                 </a>
+                                <CtaBadge video={video} />
                               </p>
                               <p className="text-sm text-muted-foreground">{video.durationSeconds ? `${Math.round(video.durationSeconds/60)}m` : ''}</p>
                             </div>
@@ -457,5 +474,6 @@ export default function ChannelDashboard() {
         </Tabs>
       </div>
     </div>
+    </ProtectedRoute>
   )
 }

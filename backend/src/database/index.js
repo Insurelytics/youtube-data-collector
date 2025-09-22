@@ -5,6 +5,7 @@ import { initJobsSchema } from './jobs.js';
 import { initTopicsSchema } from './topics.js';
 import { initSettingsSchema } from './settings.js';
 import { initSuggestedChannelsSchema } from './suggested-channels.js';
+import { initWorkspacesSchema } from './workspaces.js';
 
 // Re-export all functions from individual modules
 export { ensureDatabase } from './connection.js';
@@ -93,10 +94,17 @@ export {
   listSuggestedChannels,
   getSuggestedChannelsBySearchTerm,
   removeSuggestedChannel,
-  isChannelAlreadyTracked,
-  hasCategoryBeenSearched,
-  getCategoriesWithSuggestions
+  isChannelAlreadyTracked
 } from './suggested-channels.js';
+
+// Workspaces functions
+export {
+  initWorkspacesSchema,
+  listWorkspaces,
+  getWorkspace,
+  createWorkspace,
+  removeWorkspace
+} from './workspaces.js';
 
 // Initialize all database schemas
 export function initializeDatabase() {
@@ -107,5 +115,6 @@ export function initializeDatabase() {
   initTopicsSchema();
   initSettingsSchema();
   initSuggestedChannelsSchema();
+  initWorkspacesSchema();
   console.log('Database initialized with all schemas');
 }

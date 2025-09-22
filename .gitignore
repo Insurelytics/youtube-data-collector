@@ -1,9 +1,13 @@
 node_modules/
 .env
-data.sqlite
 npm-debug.log*
-data.sqlite-shm
-data.sqlite-wal
 frontend/.next/*
 backend/images/*
 backend/temp/*
+backend/config/*
+
+# SQLite database files
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+backend/data copy.sqlite

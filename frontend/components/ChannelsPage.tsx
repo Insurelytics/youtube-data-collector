@@ -12,6 +12,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useToast } from "@/hooks/use-toast"
+import { useJobs } from "@/hooks/useJobs"
 
 type UiChannel = {
   id: string
@@ -92,7 +93,8 @@ function getGlobalCriteria() {
     viralMultiplier: 5,
     commentWeight: 500,
     likeWeight: 150,
-    timeRange: '90'
+    timeRange: '90',
+    viralMethod: 'subscribers'
   }
 }
 
@@ -109,6 +111,8 @@ export function ChannelsPage() {
   const [loadingState, setLoadingState] = useState<LoadingState>({ type: null })
   const [criteria] = useState(getGlobalCriteria())
   const { toast } = useToast()
+  const { runningJobs } = useJobs()
+  const initialScrapeJobs = runningJobs.filter(j => j.type.includes('Initial Scrape'))
 
   async function loadChannels() {
     try {
@@ -308,6 +312,10 @@ export function ChannelsPage() {
   return (
     <div className="space-y-6">
       {/* Add Channel Section */}
+      <div className="mb-3">
+          <h1 className="text-2xl font-semibold">Add and Manage Channels</h1>
+          <p className="text-md text-muted-foreground">Add new channels to track and manage your tracked channels</p>
+        </div>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -338,7 +346,7 @@ export function ChannelsPage() {
                 onChange={(e) => handleUrlChange(e.target.value)}
                 className="flex-1"
               />
-              <Button onClick={addChannel} disabled={loadingState.type === 'adding'}>
+              <Button onClick={addChannel}>
                 {loadingState.type === 'adding' ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
@@ -347,17 +355,31 @@ export function ChannelsPage() {
                 {loadingState.type === 'adding' ? 'Adding...' : 'Add Channel'}
               </Button>
             </div>
-            
-            {loadingState.type === 'adding' && (
-              <Alert>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <AlertTitle>Scraping in progress</AlertTitle>
-                <AlertDescription>
-                  {loadingState.message}
-                </AlertDescription>
-              </Alert>
+
+            {initialScrapeJobs.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Running initial scrapes</div>
+                <div className="space-y-1">
+                  {initialScrapeJobs.map(job => (
+                    <div key={job.id} className="flex items-center justify-between text-sm rounded-md border p-2">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span className="font-medium">{job.channelName}</span>
+                        <Badge variant="outline" className="capitalize">{job.type.replace(' Initial Scrape','')}</Badge>
+                      </div>
+                      {typeof job.progressCurrent === 'number' && typeof job.progressTotal === 'number' && job.progressTotal > 0 ? (
+                        <span className="text-xs text-muted-foreground">
+                          {Math.min(100, Math.round((job.progressCurrent / job.progressTotal) * 100))}%
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Queued/Running</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
-            
+
             <p className="text-xs text-muted-foreground">
               {selectedPlatform === 'instagram'
                 ? "Enter an Instagram profile URL or username. Scraping may take 2-3 minutes."

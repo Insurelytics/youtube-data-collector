@@ -32,7 +32,7 @@ Title: ${title}
 Description: ${description}
 Transcription: ${transcription}
 If it's impossible to come up with good hashtags, leave hashtags empty and set unableToInfer to true` }],
-        model: "gpt-5-nano",
+        model: "gpt-5-mini",
         response_model: { 
             schema: HashtagsSchema, 
             name: "Hashtags"

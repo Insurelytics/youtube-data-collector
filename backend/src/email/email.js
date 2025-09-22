@@ -5,7 +5,11 @@ import FormData from 'form-data';
 import Mailgun from 'mailgun.js';
 import { getSetting } from '../database/index.js';
 
+// Note: Email sending is not currently in use; function retained but short-circuited
 async function sendEmail(to, subject, text, html = null) {
+  console.log('[email] Email sending is disabled (not in use). Skipping send.');
+  return { skipped: true };
+  // Original implementation preserved below for future re-enable
   const mailgun = new Mailgun(FormData);
   const mg = mailgun.client({
     username: "api",
@@ -63,7 +67,11 @@ function formatVideoSummary(video) {
   URL: ${contentUrl}`;
 }
 
+// Note: Email sending is not currently in use; function retained but short-circuited
 async function sendViralVideosEmail(viralVideos, totalNewVideos, jobResults) {
+  console.log('[email] Viral videos email is disabled (not in use). Skipping.');
+  return { skipped: true };
+  // Original implementation preserved below for future re-enable
   // Check for email addresses in schedule settings first (current format)
   const scheduleSettingsStr = getSetting('scheduleSettings');
   let emailList = '';

@@ -6,32 +6,18 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+ 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
-// Time range options with their corresponding days
-const TIME_RANGES = [
-  { label: "7 days", value: "7", days: 7 },
-  { label: "30 days", value: "30", days: 30 },
-  { label: "90 days", value: "90", days: 90 },
-  { label: "6 months", value: "180", days: 180 },
-  { label: "1 year", value: "365", days: 365 },
-  { label: "All time", value: "36500", days: 36500 }
-]
-
 function getGlobalCriteria() {
-  if (typeof window !== 'undefined') {
-    const stored = localStorage.getItem('youtube-global-criteria')
-    if (stored) {
-      try {
-        return JSON.parse(stored)
-      } catch {}
-    }
-  }
   return {
     viralMultiplier: 5,
     commentWeight: 500,
     likeWeight: 150,
-    timeRange: '90'
+    timeRange: '',
+    viralMethod: 'subscribers',
+    hideCta: false
   }
 }
 
@@ -44,7 +30,31 @@ function formatNumber(num: number) {
 export function CriteriaPage() {
   const [criteria, setCriteria] = useState(getGlobalCriteria())
 
-  const handleCriteriaChange = (field: string, value: number | string) => {
+  useEffect(() => {
+    // Load client-side to avoid hydration mismatch
+    try {
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('youtube-global-criteria') : null
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        setCriteria(prev => ({ ...prev, ...parsed }))
+      } else {
+        // Default to 120 days on first load
+        const initial = { ...criteria, timeRange: '120', viralMethod: 'subscribers', hideCta: false }
+        setCriteria(initial)
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('youtube-global-criteria', JSON.stringify(initial))
+        }
+        fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ settings: { globalCriteria: initial } })
+        }).catch(() => {})
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const handleCriteriaChange = (field: string, value: any) => {
     const newCriteria = { ...criteria, [field]: value }
     setCriteria(newCriteria)
     
@@ -101,12 +111,32 @@ export function CriteriaPage() {
                       onChange={(e) => handleCriteriaChange('viralMultiplier', parseFloat(e.target.value) || 5)}
                       className="w-20"
                     />
-                    <span className="text-sm text-muted-foreground">
-                      x average views
-                    </span>
+                    <span className="text-sm text-muted-foreground">x</span>
                   </div>
+                  <div className="space-y-2" style={{ maxWidth: 300 }}>
+                    <Label htmlFor="viral-method">Viral Threshold Based On</Label>
+                    <Select
+                      value={criteria.viralMethod || 'subscribers'}
+                      onValueChange={(value) => handleCriteriaChange('viralMethod', value)}
+                    >
+                      <SelectTrigger id="viral-method" className="w-full">
+                        <SelectValue placeholder="Select method" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="subscribers">Channel subscribers/followers</SelectItem>
+                        <SelectItem value="avgViews">Average views</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                <div className="flex items-center justify-between pt-2">
+                  <div className="flex flex-col gap-0.5">
+                    <Label htmlFor="hide-cta">Hide CTA-bait videos globally</Label>
+                    <span className="text-xs text-muted-foreground">Filter videos where comments look like mass call-to-action responses</span>
+                  </div>
+                  <Switch id="hide-cta" checked={!!criteria.hideCta} onCheckedChange={(val) => handleCriteriaChange('hideCta', !!val)} />
+                </div>
                   <p className="text-xs text-muted-foreground">
-                    Videos need {criteria.viralMultiplier}x+ more views than average views to be considered viral
+                    Videos need {criteria.viralMultiplier}x+ more views than {criteria.viralMethod === 'avgViews' ? 'average views' : 'subscriber count'} to be considered viral
                   </p>
                 </div>
               </div>
@@ -179,23 +209,21 @@ export function CriteriaPage() {
                     <Clock className="h-3 w-3" />
                     Analysis Period
                   </Label>
-                  <Select 
-                    value={criteria.timeRange} 
-                    onValueChange={(value) => handleCriteriaChange('timeRange', value)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select time range" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TIME_RANGES.map((range) => (
-                        <SelectItem key={range.value} value={range.value}>
-                          {range.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      id="time-range"
+                      type="number"
+                      min="1"
+                      max="36500"
+                      step="1"
+                      value={criteria.timeRange || ''}
+                      onChange={(e) => handleCriteriaChange('timeRange', e.target.value)}
+                      className="w-28"
+                    />
+                    <span className="text-sm text-muted-foreground">days</span>
+                  </div>
                   <p className="text-xs text-muted-foreground">
-                    Analysis includes videos from the last {TIME_RANGES.find(r => r.value === criteria.timeRange)?.label.toLowerCase() || 'period'}
+                    Analysis includes videos from the last {criteria.timeRange ? `${criteria.timeRange} days` : 'selected period'}
                   </p>
                 </div>
               </div>
@@ -215,7 +243,7 @@ export function CriteriaPage() {
                 <div className="space-y-2">
                   <h4 className="font-medium text-sm">Viral Video Detection</h4>
                   <p className="text-sm text-muted-foreground">
-                    A channel with 10K average views needs <strong>{formatNumber(10000 * criteria.viralMultiplier)}</strong> views 
+                    A channel with 10K {criteria.viralMethod === 'avgViews' ? 'average views' : 'subscribers'} needs <strong>{formatNumber(10000 * criteria.viralMultiplier)}</strong> views 
                     for a video to be considered viral
                   </p>
                 </div>
@@ -235,7 +263,7 @@ export function CriteriaPage() {
             <Button 
               variant="outline" 
               onClick={() => {
-                const defaultCriteria = { viralMultiplier: 5, commentWeight: 500, likeWeight: 150, timeRange: '90' }
+                const defaultCriteria = { viralMultiplier: 5, commentWeight: 500, likeWeight: 150, timeRange: '120', viralMethod: 'subscribers', hideCta: false }
                 setCriteria(defaultCriteria)
                 if (typeof window !== 'undefined') {
                   localStorage.setItem('youtube-global-criteria', JSON.stringify(defaultCriteria))

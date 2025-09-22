@@ -12,6 +12,7 @@ export interface BackendJob {
   completed_at?: string
   error_message?: string
   since_days?: number
+  is_initial_scrape?: number
   channel_id?: string
   channel_title?: string
   videos_found?: number
@@ -35,12 +36,16 @@ export interface QueueStatus {
 
 // Convert backend job to frontend Job type
 export function transformBackendJob(backendJob: BackendJob) {
-  const startTime = new Date(backendJob.created_at)
+  const startTime = backendJob.started_at ? new Date(backendJob.started_at) : new Date(backendJob.created_at)
   const endTime = backendJob.completed_at ? new Date(backendJob.completed_at) : undefined
-  const duration = endTime ? endTime.getTime() - startTime.getTime() : undefined
+  const duration = backendJob.started_at && backendJob.completed_at
+    ? new Date(backendJob.completed_at).getTime() - new Date(backendJob.started_at).getTime()
+    : undefined
 
-  // Determine if this is an initial scrape (when since_days is null or very large)
-  const isInitialScrape = !backendJob.since_days || backendJob.since_days >= 36500;
+  // Determine if this is an initial scrape using explicit flag from backend when available
+  const isInitialScrape = typeof backendJob.is_initial_scrape === 'number'
+    ? backendJob.is_initial_scrape === 1
+    : (!backendJob.since_days || backendJob.since_days >= 36500);
   const platformName = backendJob.platform === 'youtube' ? 'YouTube' : 'Instagram';
   const jobType = isInitialScrape ? `${platformName} Initial Scrape` : `${platformName} Sync`;
 

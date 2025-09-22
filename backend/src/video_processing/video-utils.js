@@ -215,7 +215,11 @@ async function extractAudio(videoPath, videoId, suffix = '') {
         throw new Error('No audio streams found in video');
       }
     } catch (probeError) {
-      throw new Error('No audio streams found in video');
+      // No audio stream: generate 1s silent audio
+      const silentCommand = `ffmpeg -f lavfi -i anullsrc=r=44100:cl=stereo -t 1 "${audioPath}" -y`;
+      await execAsync(silentCommand);
+      console.log(`Error: no audio streams found in video, generated 1s silent audio: ${audioPath}`);
+      return audioPath;
     }
     
     const command = `ffmpeg -i "${videoPath}" -vn -acodec pcm_s16le -ar 44100 -ac 2 "${audioPath}" -y`;

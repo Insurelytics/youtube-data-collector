@@ -17,11 +17,13 @@ export function initSuggestedChannelsSchema() {
       profilePicUrl TEXT,
       localProfilePicPath TEXT,
       searchTerm TEXT NOT NULL,
-      categoryId INTEGER,
       foundAt TEXT DEFAULT CURRENT_TIMESTAMP,
       platform TEXT DEFAULT 'instagram',
-      FOREIGN KEY (categoryId) REFERENCES topics(id)
+      categoryId INTEGER,
+      categoryTopicId INTEGER
     );
+    CREATE INDEX IF NOT EXISTS idx_suggested_channels_categoryId ON suggested_channels(categoryId);
+    CREATE INDEX IF NOT EXISTS idx_suggested_channels_categoryTopicId ON suggested_channels(categoryTopicId);
   `);
 }
 
@@ -29,14 +31,14 @@ export function upsertSuggestedChannel(channel) {
   const db = getDatabase();
   const stmt = db.prepare(`
     INSERT INTO suggested_channels (
-      id, username, fullName, followersCount, followsCount, postsCount,
-      verified, isPrivate, biography, externalUrl, profilePicUrl,
-      localProfilePicPath, searchTerm, categoryId, platform
+      id, username, fullName, followersCount, followsCount, postsCount, 
+      verified, isPrivate, biography, externalUrl, profilePicUrl, 
+      localProfilePicPath, searchTerm, platform
     )
     VALUES (
       @id, @username, @fullName, @followersCount, @followsCount, @postsCount,
       @verified, @isPrivate, @biography, @externalUrl, @profilePicUrl,
-      @localProfilePicPath, @searchTerm, @categoryId, @platform
+      @localProfilePicPath, @searchTerm, @platform
     )
     ON CONFLICT(id) DO UPDATE SET
       username=excluded.username,
@@ -51,11 +53,10 @@ export function upsertSuggestedChannel(channel) {
       profilePicUrl=COALESCE(excluded.profilePicUrl, suggested_channels.profilePicUrl),
       localProfilePicPath=COALESCE(excluded.localProfilePicPath, suggested_channels.localProfilePicPath),
       searchTerm=excluded.searchTerm,
-      categoryId=COALESCE(excluded.categoryId, suggested_channels.categoryId),
       platform=COALESCE(excluded.platform, suggested_channels.platform)
   `);
-
-  const withDefaults = {
+  
+  const withDefaults = { 
     followersCount: null,
     followsCount: null,
     postsCount: null,
@@ -65,9 +66,8 @@ export function upsertSuggestedChannel(channel) {
     externalUrl: null,
     profilePicUrl: null,
     localProfilePicPath: null,
-    categoryId: null,
     platform: 'instagram',
-    ...channel
+    ...channel 
   };
   stmt.run(withDefaults);
 }
@@ -100,42 +100,16 @@ export function isChannelAlreadyTracked(username) {
   const db = getDatabase();
   // Check if channel exists in main channels table (could be Instagram or YouTube)
   const existsInChannels = db.prepare(`
-    SELECT 1 FROM channels
+    SELECT 1 FROM channels 
     WHERE handle = ? OR id = ? OR id = ?
   `).get(username, `ig_${username}`, username);
-
+  
   // Check if already exists in suggested channels
   const existsInSuggested = db.prepare(`
-    SELECT 1 FROM suggested_channels
+    SELECT 1 FROM suggested_channels 
     WHERE username = ? OR id = ?
   `).get(username, `ig_${username}`);
-
+  
   return !!(existsInChannels || existsInSuggested);
-}
-
-export function hasCategoryBeenSearched(topicId) {
-  const db = getDatabase();
-  const result = db.prepare(`
-    SELECT 1 FROM suggested_channels
-    WHERE categoryId = ?
-    LIMIT 1
-  `).get(topicId);
-  return !!result;
-}
-
-export function getCategoriesWithSuggestions() {
-  const db = getDatabase();
-  return db.prepare(`
-    SELECT DISTINCT
-      t.id,
-      t.name as topicName,
-      COUNT(sc.id) as suggestionCount,
-      MIN(sc.foundAt) as firstSuggestedAt,
-      MAX(sc.foundAt) as lastSuggestedAt
-    FROM topics t
-    JOIN suggested_channels sc ON t.id = sc.categoryId
-    GROUP BY t.id, t.name
-    ORDER BY lastSuggestedAt DESC
-  `).all();
 }
 

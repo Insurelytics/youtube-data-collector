@@ -7,7 +7,8 @@ export function initTopicsSchema() {
     CREATE TABLE IF NOT EXISTS topics (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT UNIQUE NOT NULL,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      suggested_channels_generated INTEGER DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS video_topics (
@@ -164,7 +165,7 @@ export function getTopicStats(source = null) {
   };
 }
 
-export function getVideosByTopic(topicName, { page = 1, pageSize = 50, source = null } = {}) {
+export function getVideosByTopic(topicName, { page = 1, pageSize = 50, source = null, excludeCta = false } = {}) {
   const db = getDatabase();
   const normalizedName = topicName.toLowerCase().trim();
   
@@ -173,7 +174,7 @@ export function getVideosByTopic(topicName, { page = 1, pageSize = 50, source = 
     FROM videos v
     INNER JOIN video_topics vt ON v.id = vt.video_id
     INNER JOIN topics t ON vt.topic_id = t.id
-    WHERE t.name = ?
+    WHERE t.name = ?${excludeCta ? ' AND COALESCE(v.hasCallToAction,0) = 0' : ''}
   `;
   const params = [normalizedName];
   
@@ -193,7 +194,7 @@ export function getVideosByTopic(topicName, { page = 1, pageSize = 50, source = 
     INNER JOIN video_topics vt ON v.id = vt.video_id
     INNER JOIN topics t ON vt.topic_id = t.id
     LEFT JOIN channels c ON v.channelId = c.id
-    WHERE t.name = ?
+    WHERE t.name = ?${excludeCta ? ' AND COALESCE(v.hasCallToAction,0) = 0' : ''}
   `;
   const videoParams = [normalizedName];
   

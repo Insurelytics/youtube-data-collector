@@ -1,4 +1,5 @@
-import { updateSyncJob, getNextPendingJob, upsertChannel } from '../database/index.js';
+import { updateSyncJob, getNextPendingJob, upsertChannel, listWorkspaces } from '../database/index.js';
+import { setRequestWorkspace } from '../database/connection.js';
 import { syncChannelVideos as syncYouTubeVideos } from './youtube.js';
 import { syncChannelReels as syncInstagramReels } from './instagram.js';
 import { performSmartScraping } from './scraping-orchestrator.js';
@@ -30,12 +31,20 @@ class QueueManager {
         }
 
         try {
-            const nextJob = await getNextPendingJob();
-            if (!nextJob) {
-                return; // No pending jobs
+            // Scan default + all registered workspaces for a pending job
+            const workspaces = [{ id: 'default' }, ...listWorkspaces().map(w => ({ id: w.id }))];
+            for (const ws of workspaces) {
+                try { setRequestWorkspace(ws.id); } catch (e) {}
+                const nextJob = await getNextPendingJob();
+                if (nextJob) {
+                    // Ensure workspace context for this job
+                    try { setRequestWorkspace(nextJob.workspace_id || ws.id || 'default'); } catch (e) {}
+                    await this.processJob(nextJob);
+                    return;
+                }
             }
-
-            await this.processJob(nextJob);
+            // No jobs found in any workspace
+            return;
         } catch (error) {
             console.error('Error processing queue:', error);
         }

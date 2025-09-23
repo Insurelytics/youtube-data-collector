@@ -130,6 +130,7 @@ async function createServer() {
   // Auth middleware for all /api routes except login
   function authMiddleware(req, res, next) {
     if (process.env.DEV_NO_AUTH === 'true') return next();
+    if (req.path === '/api/health') return next();
     if (req.path === '/api/login') return next();
     const cookies = parseCookies(req.headers.cookie || '');
     const token = cookies.authToken;

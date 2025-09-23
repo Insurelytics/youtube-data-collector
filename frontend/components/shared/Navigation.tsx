@@ -17,6 +17,7 @@ export function Navigation() {
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [workspaces, setWorkspaces] = useState([])
   const [currentWorkspace, setCurrentWorkspace] = useState<string | null>(null)
+  const [mobileOpen, setMobileOpen] = useState(false)
 
   // Calculate active jobs count (running + queued/pending)
   const activeJobsCount = runningJobs.filter(job => job.status === 'running' || job.status === 'queued').length

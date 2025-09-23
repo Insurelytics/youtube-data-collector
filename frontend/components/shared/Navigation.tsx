@@ -8,6 +8,7 @@ import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@
 import { useJobs } from "@/hooks/useJobs"
 import { useState } from "react"
 import { useEffect } from "react"
+import { Menu } from "lucide-react"
 
 export function Navigation() {
   const pathname = usePathname()
@@ -95,8 +96,9 @@ export function Navigation() {
     <div className="sticky top-0 z-40 w-full border-b bg-background/60 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <div className="container mx-auto px-6 py-4">
 
-        <nav className="flex items-center justify-between gap-2 overflow-x-auto">
-          <div className="flex gap-2 overflow-x-auto">
+        <nav className="flex items-center justify-between gap-2">
+          {/* desktop nav */}
+          <div className="hidden sm:flex gap-2 overflow-x-auto">
             {navItems.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href
@@ -115,7 +117,19 @@ export function Navigation() {
             })}
           </div>
 
-          <div className="flex items-center gap-3">
+          {/* mobile: hamburger + logo area */}
+          <div className="flex items-center gap-3 sm:hidden">
+            <button
+              aria-label="Open menu"
+              onClick={() => setMobileOpen((v) => !v)}
+              className="p-2 rounded-md"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* right-side controls (desktop) */}
+          <div className="hidden sm:flex items-center gap-3">
             <div className="flex items-center gap-2">
               <Select value={currentWorkspace ?? undefined} onValueChange={(val) => selectWorkspace(val)}>
                 <SelectTrigger className="w-[220px] h-9 text-sm">
@@ -141,6 +155,58 @@ export function Navigation() {
               <LogOut className="h-4 w-4" />
               {isLoggingOut ? "Signing out..." : "Logout"}
             </Button>
+          </div>
+
+          {/* mobile menu panel */}
+          {/** Keep this simple: render below nav when open on small screens */}
+          <div className="sm:hidden mt-2 w-full">
+            {typeof window !== 'undefined' && (
+              mobileOpen ? (
+                <div className="flex flex-col gap-2">
+                  {navItems.map((item) => {
+                    const Icon = item.icon
+                    const isActive = pathname === item.href
+                    return (
+                      <Link key={item.href} href={item.href}>
+                        <Button
+                          variant={isActive ? "default" : "outline"}
+                          className={`w-full justify-start flex items-center gap-2 whitespace-nowrap ${item.hasActive ? "blue-shimmer" : ""}`}
+                        >
+                          <Icon className="h-4 w-4" />
+                          {item.label}
+                        </Button>
+                      </Link>
+                    )
+                  })}
+
+                  <div className="flex flex-col gap-2">
+                    <Select value={currentWorkspace ?? undefined} onValueChange={(val) => selectWorkspace(val)}>
+                      <SelectTrigger className="w-full h-9 text-sm">
+                        <SelectValue placeholder="Select a workspace" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">-- none --</SelectItem>
+                        {workspaces.map((w: any) => (
+                          <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                        ))}
+                        <SelectItem value="create">+ create workspace...</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleLogout}
+                      disabled={isLoggingOut}
+                      className="flex items-center gap-2 whitespace-nowrap"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      {isLoggingOut ? "Signing out..." : "Logout"}
+                    </Button>
+                  </div>
+                </div>
+              ) : null
+            )}
           </div>
         </nav>
       </div>

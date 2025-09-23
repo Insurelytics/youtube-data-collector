@@ -10,10 +10,11 @@ const nextConfig = {
     unoptimized: true,
   },
   async rewrites() {
+    const backendHost = process.env.BACKEND_HOST || 'http://localhost:4000'
     return [
       {
         source: '/api/:path*',
-        destination: 'http://backend:4000/api/:path*',
+        destination: `${backendHost}/api/:path*`,
       },
     ];
   },

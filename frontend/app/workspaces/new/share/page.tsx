@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -18,7 +18,7 @@ export default function ShareWorkspacePage() {
   const [verified, setVerified] = useState(false)
   const [copied, setCopied] = useState(false)
   const router = useRouter()
-  const params = useSearchParams()
+  const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
 
   useEffect(() => {
     const p = params?.get('sheet') || ''
@@ -32,7 +32,7 @@ export default function ShareWorkspacePage() {
         }
       } catch {}
     })()
-  }, [params])
+  }, [])
 
   const extractSheetId = (url: string) => {
     const m = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)

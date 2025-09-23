@@ -1,15 +1,16 @@
 "use client"
 
 import { useMemo, useState, useEffect } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Loader2, CheckCircle2 } from "lucide-react"
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute"
 
 export default function NewWorkspaceSummaryPage() {
-  const params = useSearchParams()
+  // read params directly from window.location to avoid needing a Suspense boundary
   const router = useRouter()
+  const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
   const [submitting, setSubmitting] = useState(false)
   const [sheetInfo, setSheetInfo] = useState<{ title: string | null, sheets: string[] } | null>(null)
   const [sheetLoading, setSheetLoading] = useState(false)

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -17,12 +17,16 @@ export default function NewWorkspacePage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [nameTaken, setNameTaken] = useState(false)
   const router = useRouter()
-  const searchParams = useSearchParams()
+  // useSearchParams must be read inside a client component's render or wrapped in Suspense.
+  // For simplicity and to avoid a suspense boundary here, read the URL directly.
+  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
 
   useEffect(() => {
     const prefill = searchParams?.get('name') || ''
     if (prefill) setName(prefill)
-  }, [searchParams])
+    // searchParams is derived from window.location, no dependencies needed
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     const ctrl = new AbortController()

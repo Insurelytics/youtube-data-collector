@@ -19,6 +19,7 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/package*.json ./
 
 EXPOSE 3000
-CMD ["npm", "start"]
+# Do not hardcode PORT here; expansion happens at runtime from the container environment
+CMD ["sh", "-lc", "node ./node_modules/next/dist/bin/next start -p ${PORT:-3000}"]
 
 

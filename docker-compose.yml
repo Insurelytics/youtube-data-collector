@@ -22,8 +22,7 @@ services:
     container_name: ydc-frontend
     ports:
       - "3000:3000"
-    env_file:
-      - ./backend/.env
+    # Do NOT load backend/.env here to avoid leaking secrets to the frontend
     depends_on:
       - backend
     restart: unless-stopped

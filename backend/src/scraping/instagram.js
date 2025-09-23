@@ -8,7 +8,7 @@ dotenv.config();
 const MAX_VIDEOS_PER_SYNC = parseInt(process.env.MAX_VIDEOS_PER_SYNC) || 25;
 
 // Move the window back slightly to capture engagement changes around the cutoff
-let engagementLookbackWindow = 1; // days
+let engagementLookbackWindow = 31; // one month
 
 // Initialize the ApifyClient with API token from .env
 const client = new ApifyClient({

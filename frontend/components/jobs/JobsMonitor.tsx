@@ -23,6 +23,16 @@ export function JobsMonitor() {
   const runningAndQueuedJobs = runningJobs.filter(job => job.status === 'running' || job.status === 'queued')
   const actuallyRunningJobs = runningJobs.filter(job => job.status === 'running')
 
+  // Sort so active (running) items appear at the top, then queued, most recent first
+  const sortedRunningAndQueuedJobs = [...runningAndQueuedJobs].sort((a, b) => {
+    if (a.status !== b.status) {
+      return a.status === 'running' ? -1 : 1
+    }
+    const aTime = a.startTime ? new Date(a.startTime).getTime() : 0
+    const bTime = b.startTime ? new Date(b.startTime).getTime() : 0
+    return bTime - aTime
+  })
+
   // Update current time every second for elapsed time calculation
   useEffect(() => {
     const interval = setInterval(() => {
@@ -162,7 +172,7 @@ export function JobsMonitor() {
           ) : runningAndQueuedJobs.length > 0 || justCompletedJobs.length > 0 ? (
             <div className="space-y-4">
               {/* Running and queued jobs */}
-              {runningAndQueuedJobs.map((job) => (
+              {sortedRunningAndQueuedJobs.map((job) => (
                 <div
                   key={job.id}
                   className={`transition-all duration-700 ${

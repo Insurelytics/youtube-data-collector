@@ -1,5 +1,5 @@
 import { updateSyncJob, getNextPendingJob, upsertChannel, listWorkspaces } from '../database/index.js';
-import { setRequestWorkspace } from '../database/connection.js';
+import { runWithWorkspace } from '../database/connection.js';
 import { syncChannelVideos as syncYouTubeVideos } from './youtube.js';
 import { syncChannelReels as syncInstagramReels } from './instagram.js';
 import { performSmartScraping } from './scraping-orchestrator.js';
@@ -34,12 +34,12 @@ class QueueManager {
             // Scan default + all registered workspaces for a pending job
             const workspaces = [{ id: 'default' }, ...listWorkspaces().map(w => ({ id: w.id }))];
             for (const ws of workspaces) {
-                try { setRequestWorkspace(ws.id); } catch (e) {}
-                const nextJob = await getNextPendingJob();
+                const nextJob = await runWithWorkspace(ws.id, async () => getNextPendingJob());
                 if (nextJob) {
                     // Ensure workspace context for this job
-                    try { setRequestWorkspace(nextJob.workspace_id || ws.id || 'default'); } catch (e) {}
-                    await this.processJob(nextJob);
+                    await runWithWorkspace(nextJob.workspace_id || ws.id || 'default', async () => {
+                        await this.processJob(nextJob);
+                    });
                     return;
                 }
             }

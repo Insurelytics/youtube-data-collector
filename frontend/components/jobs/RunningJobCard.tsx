@@ -92,10 +92,12 @@ export function RunningJobCard({ job, currentTime }: RunningJobCardProps) {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground">Elapsed Time</p>
-            <p className="text-lg font-semibold">{formatDuration(getElapsedTime(job.startTime, currentTime))}</p>
-          </div>
+          {job.status === 'running' && (
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Elapsed Time</p>
+              <p className="text-lg font-semibold">{formatDuration(getElapsedTime(job.startTime, currentTime))}</p>
+            </div>
+          )}
           <div>
             <p className="text-sm font-medium text-muted-foreground">Videos Processed</p>
             <p className="text-lg font-semibold">{job.videosProcessed}</p>

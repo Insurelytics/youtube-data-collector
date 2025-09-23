@@ -74,18 +74,17 @@ async function createServer() {
 
   // Clean up any jobs that were left in 'running' or 'pending' state across all workspaces
   try {
-    const { setRequestWorkspace } = await import('./database/connection.js');
+    const { runWithWorkspace } = await import('./database/connection.js');
     const workspaces = [{ id: 'default' }, ...listWorkspaces().map(w => ({ id: w.id }))];
     for (const ws of workspaces) {
       try {
-        setRequestWorkspace(ws.id);
-        cleanupOrphanedRunningJobs();
+        await runWithWorkspace(ws.id, async () => {
+          cleanupOrphanedRunningJobs();
+        });
       } catch (e) {
         console.warn(`Job cleanup skipped for workspace '${ws.id}':`, e?.message || e);
       }
     }
-    // Restore to default workspace after cleanup
-    setRequestWorkspace('default');
   } catch (e) {
     console.warn('Global job cleanup failed:', e?.message || e);
   }
@@ -98,17 +97,16 @@ async function createServer() {
 
   const app = express();
   app.use(express.json());
-  // Workspace selector middleware: read from header or cookie and set DB workspace
-  const { setRequestWorkspace, initializeWorkspaceDatabase } = await import('./database/connection.js');
+  // Workspace selector middleware: read from header or cookie and set async context
+  const { runWithWorkspace, initializeWorkspaceDatabase } = await import('./database/connection.js');
 
   app.use((req, _res, next) => {
     const header = req.headers['x-workspace-id'];
     const cookies = parseCookies(req.headers.cookie || '');
     const cookieWorkspace = cookies.workspaceId;
     const workspaceId = (header || cookieWorkspace || 'default').toString();
-    setRequestWorkspace(workspaceId);
     req.workspaceId = workspaceId;
-    next();
+    runWithWorkspace(workspaceId, next);
   });
   
   // Simple in-memory session store
@@ -178,7 +176,7 @@ async function createServer() {
     }
   });
 
-  app.post('/api/workspaces', (req, res) => {
+  app.post('/api/workspaces', async (req, res) => {
     try {
       let { id, name, driveFolderId } = req.body || {};
       if (!name) return res.status(400).json({ error: 'name required' });
@@ -203,18 +201,15 @@ async function createServer() {
       // Initialize the DB file and run schema init on it
       const db = initializeWorkspaceDatabase(id);
       
-      // Set the workspace context temporarily to initialize schemas
-      setRequestWorkspace(id);
-      
-      initChannelsSchema();
-      initVideosSchema();
-      initJobsSchema();
-      initTopicsSchema();
-      initSettingsSchema();
-      initSuggestedChannelsSchema();
-      
-      // Restore to request workspace
-      setRequestWorkspace(req.workspaceId);
+      // Initialize schemas within the new workspace context
+      await runWithWorkspace(id, async () => {
+        initChannelsSchema();
+        initVideosSchema();
+        initJobsSchema();
+        initTopicsSchema();
+        initSettingsSchema();
+        initSuggestedChannelsSchema();
+      });
       
       createWorkspace({ id, name, dbFile: `data/${id}.sqlite`, driveFolderId: driveFolderId || null });
       res.json({ ok: true, id });

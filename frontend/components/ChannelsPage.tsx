@@ -54,8 +54,8 @@ function extractHandle(input: string): string {
       return seg || ""
     }
     
-    // For other URLs, only return if it starts with @
-    return seg.startsWith("@") ? seg : ""
+    // For other URLs, do not infer a handle
+    return ""
   } catch {
     // If not a valid URL, might be a plain username
     return trimmed.match(/^[a-zA-Z0-9._]+$/) ? trimmed : ""
@@ -118,6 +118,18 @@ export function ChannelsPage() {
   const { toast } = useToast()
   const { runningJobs } = useJobs()
   const initialScrapeJobs = runningJobs.filter(j => j.type.includes('Initial Scrape'))
+
+  // Simple ETA: 20 minutes per initial scrape job, minus progress on the active one
+  const etaMinutes = (() => {
+    const total = initialScrapeJobs.length * 20
+    const active = initialScrapeJobs.find(j => j.status === 'running')
+    if (active && typeof active.progressCurrent === 'number' && typeof active.progressTotal === 'number' && active.progressTotal > 0) {
+      const completedSteps = Math.min(Math.max(active.progressCurrent, 0), active.progressTotal)
+      const subtract = (completedSteps / active.progressTotal) * 20
+      return Math.max(0, Math.round(total - subtract))
+    }
+    return total
+  })()
 
   async function loadChannels() {
     try {
@@ -187,8 +199,7 @@ export function ChannelsPage() {
       return
     }
 
-    const isInstagram = selectedPlatform === 'instagram'
-    const estimatedTime = isInstagram ? '2-3 minutes' : '30 seconds'
+    const estimatedTime = '15-30 minutes'
     
     setLoadingState({
       type: 'adding',
@@ -267,7 +278,7 @@ export function ChannelsPage() {
 
   async function resyncChannel(handle: string, platform: string) {
     const isInstagram = platform === 'instagram'
-    const estimatedTime = isInstagram ? '2-3 minutes' : '30 seconds'
+    const estimatedTime = '15-30 minutes'
     
     const channel = channels.find(c => c.handle === handle)
     const channelId = channel?.id
@@ -372,13 +383,7 @@ export function ChannelsPage() {
                         <span className="font-medium">{job.channelName}</span>
                         <Badge variant="outline" className="capitalize">{job.type.replace(' Initial Scrape','')}</Badge>
                       </div>
-                      {typeof job.progressCurrent === 'number' && typeof job.progressTotal === 'number' && job.progressTotal > 0 ? (
-                        <span className="text-xs text-muted-foreground">
-                          {Math.min(100, Math.round((job.progressCurrent / job.progressTotal) * 100))}%
-                        </span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Queued/Running</span>
-                      )}
+                      <span className="text-xs text-muted-foreground">initial scrape</span>
                     </div>
                   ))}
                 </div>
@@ -387,8 +392,8 @@ export function ChannelsPage() {
 
             <p className="text-xs text-muted-foreground">
               {selectedPlatform === 'instagram'
-                ? "Enter an Instagram profile URL or username. Scraping may take 2-3 minutes."
-                : "Enter a YouTube channel URL or handle."}
+                ? `Enter an Instagram profile URL or username. ${initialScrapeJobs.length > 0 ? `Estimated time remaining: ~${etaMinutes} minutes.` : 'Scraping may take 15-30 minutes.'}`
+                : `Enter a YouTube channel URL or handle. ${initialScrapeJobs.length > 0 ? `Estimated time remaining: ~${etaMinutes} minutes.` : 'Scraping may take 15-30 minutes.'}`}
             </p>
           </div>
         </CardContent>

@@ -14,8 +14,8 @@ export function useAuth() {
 
   const checkAuth = async () => {
     try {
-      // Check authentication by calling a protected endpoint
-      const res = await fetch("/api/health", {
+      // Check authentication by calling a dedicated protected endpoint
+      const res = await fetch("/api/auth/check", {
         method: "GET",
         credentials: "include", // Include cookies
       })

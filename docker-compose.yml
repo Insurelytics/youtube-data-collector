@@ -11,6 +11,7 @@ services:
       - ./backend/.env
     environment:
       - NODE_ENV=production
+      - GOOGLE_SERVICE_ACCOUNT_KEY_PATH=/app/config/youtube-data-collector-468418-4ac6b7a0886b.json
     volumes:
       - ./backend/data:/app/data
       - ./backend/images:/app/images
@@ -23,8 +24,13 @@ services:
       retries: 3
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        - BACKEND_HOST=http://backend:4000
     container_name: ydc-frontend
+    environment:
+      - BACKEND_HOST=http://backend:4000
     ports:
       - "3000:3000"
     # Do NOT load backend/.env here to avoid leaking secrets to the frontend

@@ -168,6 +168,11 @@ async function createServer() {
   // Apply auth for all API routes after login/logout are defined
   app.use(authMiddleware);
 
+  // Auth check endpoint (protected)
+  app.get('/api/auth/check', (_req, res) => {
+    res.json({ ok: true });
+  });
+
   // Workspace management endpoints (protected)
   app.get('/api/workspaces', (req, res) => {
     try {

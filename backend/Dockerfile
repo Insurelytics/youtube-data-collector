@@ -21,9 +21,6 @@ COPY --from=builder /app/package*.json ./
 
 EXPOSE 4000
 
-# Persist SQLite and images outside container
-VOLUME ["/app/data", "/app/images"]
-
 CMD ["node", "src/server.js"]
 
 

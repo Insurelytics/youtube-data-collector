@@ -99,7 +99,7 @@ export function Navigation() {
 
         <nav className="flex items-center justify-between gap-2">
           {/* desktop nav */}
-          <div className="hidden sm:flex gap-2 overflow-x-auto">
+          <div className="hidden sm:flex gap-1.5 md:gap-2 flex-wrap">
             {navItems.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href
@@ -108,9 +108,10 @@ export function Navigation() {
                 <Link key={item.href} href={item.href}>
                   <Button
                     variant={isActive ? "default" : "outline"}
-                    className={`flex items-center gap-2 whitespace-nowrap ${item.hasActive ? "blue-shimmer" : ""}`}
+                    size="sm"
+                    className={`flex items-center gap-1.5 whitespace-nowrap text-xs md:text-sm ${item.hasActive ? "blue-shimmer" : ""}`}
                   >
-                    <Icon className="h-4 w-4" />
+                    <Icon className="h-3.5 w-3.5 md:h-4 md:w-4" />
                     {item.label}
                   </Button>
                 </Link>
@@ -130,10 +131,10 @@ export function Navigation() {
           </div>
 
           {/* right-side controls (desktop) */}
-          <div className="hidden sm:flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-2 md:gap-3 flex-shrink-0">
             <div className="flex items-center gap-2">
               <Select value={currentWorkspace ?? undefined} onValueChange={(val) => selectWorkspace(val)}>
-                <SelectTrigger className="w-[220px] h-9 text-sm">
+                <SelectTrigger className="w-[160px] lg:w-[220px] h-8 md:h-9 text-xs md:text-sm">
                   <SelectValue placeholder="Select a workspace" />
                 </SelectTrigger>
                 <SelectContent>
@@ -151,9 +152,9 @@ export function Navigation() {
               size="sm"
               onClick={handleLogout}
               disabled={isLoggingOut}
-              className="flex items-center gap-2 whitespace-nowrap"
+              className="flex items-center gap-1.5 whitespace-nowrap text-xs md:text-sm"
             >
-              <LogOut className="h-4 w-4" />
+              <LogOut className="h-3.5 w-3.5 md:h-4 md:w-4" />
               {isLoggingOut ? "Signing out..." : "Logout"}
             </Button>
           </div>

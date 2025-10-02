@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, Plus, Database } from "lucide-react"
+import { Navigation } from "@/components/shared/Navigation"
 
 interface Workspace {
   id: string
@@ -90,20 +91,25 @@ export default function NoWorkspace() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
-      </div>
+      <>
+        <Navigation />
+        <div className="min-h-screen bg-background flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+        </div>
+      </>
     )
   }
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl space-y-6">
-        <div className="text-center">
-          <Database className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-          <h1 className="text-3xl font-bold mb-2">Choose a Workspace</h1>
-          <p className="text-gray-600">Select an existing workspace or create a new one to get started</p>
-        </div>
+    <>
+      <Navigation />
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="w-full max-w-2xl space-y-6">
+          <div className="text-center">
+            <Database className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+            <h1 className="text-3xl font-bold mb-2">Choose a Workspace</h1>
+            <p className="text-gray-600">Select an existing workspace or create a new one to get started</p>
+          </div>
 
         {workspaces.length > 0 && (
           <Card>
@@ -193,6 +199,7 @@ export default function NoWorkspace() {
         </Card>
       </div>
     </div>
+    </>
   )
 }
 

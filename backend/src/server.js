@@ -766,10 +766,29 @@ async function createServer() {
     }
   });
 
-  app.delete('/api/workspaces/:id', (req, res) => {
+  app.delete('/api/workspaces/:id', async (req, res) => {
     try {
       const { id } = req.params;
-      // Note: do not delete DB file automatically; just remove registry row for now
+      const workspace = getWorkspace(id);
+      if (workspace) {
+        // Move database file to deleted directory instead of deleting it
+        const dbPath = path.join(__dirname, '..', 'data', `${id}.sqlite`);
+        const deletedDir = path.join(__dirname, '..', 'data', 'deleted');
+        
+        if (!fs.existsSync(deletedDir)) {
+          fs.mkdirSync(deletedDir, { recursive: true });
+        }
+        
+        // Move all related files (main db, WAL, and SHM files)
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        for (const ext of ['', '-wal', '-shm']) {
+          const srcFile = `${dbPath}${ext}`;
+          if (fs.existsSync(srcFile)) {
+            const destFile = path.join(deletedDir, `${id}_${timestamp}.sqlite${ext}`);
+            fs.renameSync(srcFile, destFile);
+          }
+        }
+      }
       removeWorkspace(id);
       res.json({ ok: true });
     } catch (err) {

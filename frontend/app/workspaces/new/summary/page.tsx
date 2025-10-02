@@ -1,44 +1,21 @@
 "use client"
 
-import { useMemo, useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useMemo, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Loader2, CheckCircle2 } from "lucide-react"
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute"
 
 export default function NewWorkspaceSummaryPage() {
-  // read params directly from window.location to avoid needing a Suspense boundary
   const router = useRouter()
-  const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
+  const searchParams = useSearchParams()
   const [submitting, setSubmitting] = useState(false)
-  const [sheetInfo, setSheetInfo] = useState<{ title: string | null, sheets: string[] } | null>(null)
-  const [sheetLoading, setSheetLoading] = useState(false)
 
-  const name = params?.get('name') || ''
-  const channels = params?.get('channels') || ''
-  const sheetId = params?.get('sheetId') || ''
+  const name = searchParams.get('name') || ''
+  const channels = searchParams.get('channels') || ''
 
   const channelList = useMemo(() => channels ? channels.split(/\r?\n/).map(s => s.trim()).filter(Boolean) : [], [channels])
-
-  useEffect(() => {
-    let cancelled = false
-    if (!sheetId) { setSheetInfo(null); return }
-    setSheetLoading(true)
-    ;(async () => {
-      try {
-        const res = await fetch(`/api/drive/sheet-info?id=${encodeURIComponent(sheetId)}`, { credentials: 'include' })
-        if (res.ok) {
-          const data = await res.json()
-          if (!cancelled) setSheetInfo({ title: data?.title || null, sheets: data?.sheets || [] })
-        }
-      } catch {}
-      finally {
-        if (!cancelled) setSheetLoading(false)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [sheetId])
 
   const detectPlatform = (input: string): 'instagram' | 'youtube' => {
     const s = (input || '').trim()
@@ -89,7 +66,7 @@ export default function NewWorkspaceSummaryPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ name, driveFolderId: null, spreadsheetId: sheetId || null })
+        body: JSON.stringify({ name, driveFolderId: null, spreadsheetId: null })
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({} as any))
@@ -150,43 +127,19 @@ export default function NewWorkspaceSummaryPage() {
                 <div className="text-sm text-gray-500">None</div>
               )}
             </div>
-            <div>
-              <div className="text-sm text-gray-500">Spreadsheet</div>
-              {sheetId ? (
-                sheetLoading ? (
-                  <div className="flex items-center text-sm text-gray-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading sheet…</div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="text-sm"><span className="text-gray-500">Title:</span> {sheetInfo?.title || 'Unknown'}</div>
-                    <div className="text-sm text-gray-500">Sheets:</div>
-                    {sheetInfo?.sheets?.length ? (
-                      <ul className="list-disc pl-6 text-sm">
-                        {sheetInfo.sheets.map((s, i) => (
-                          <li key={i}>{s}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div className="text-sm text-gray-500">No sheets</div>
-                    )}
-                  </div>
-                )
-              ) : (
-                <div className="text-sm text-gray-500">No spreadsheet linked</div>
-              )}
 
-              <div className="flex gap-2 pt-4 justify-end">
-                <Button variant="outline" onClick={() => router.push('/workspaces/new')}>Back</Button>
-                <Button onClick={finish} disabled={submitting}>
-                  {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Finish
-                </Button>
-              </div>
+            <div className="flex gap-2 pt-4 justify-end">
+              <Button variant="outline" onClick={() => router.push('/workspaces/new')}>Back</Button>
+              <Button onClick={finish} disabled={submitting}>
+                {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Finish
+              </Button>
             </div>
           </CardContent>
-            <CardHeader>
+            {/* <CardHeader>
               <CardTitle>Basics</CardTitle>
               <CardDescription>Workspace details</CardDescription>
-            </CardHeader>
+            </CardHeader> */}
         </Card>
       </div>
     </div>

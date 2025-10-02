@@ -78,7 +78,7 @@ export function Navigation() {
     // select existing
     document.cookie = `workspaceId=${encodeURIComponent(id)}; Path=/`;
     setCurrentWorkspace(id);
-    location.reload();
+    router.push('/');
   }
 
   const navItems = [
@@ -137,7 +137,7 @@ export function Navigation() {
                   <SelectValue placeholder="Select a workspace" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">-- none --</SelectItem>
+                  <SelectItem value="none">View all workspaces</SelectItem>
                   {workspaces.map((w: any) => (
                     <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
                   ))}
@@ -186,7 +186,7 @@ export function Navigation() {
                         <SelectValue placeholder="Select a workspace" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">-- none --</SelectItem>
+                        <SelectItem value="none">View all workspaces</SelectItem>
                         {workspaces.map((w: any) => (
                           <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
                         ))}

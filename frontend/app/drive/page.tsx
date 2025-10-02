@@ -30,7 +30,7 @@ export default function DrivePage() {
   const [channels, setChannels] = useState<Array<{ title: string, handle: string, subscriberCount?: number, platform?: string }>>([])
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState<{ ok: boolean, appended?: number, error?: string } | null>(null)
-  const [autoExported, setAutoExported] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   // Load service account email for instructions
   useEffect(() => {
@@ -158,19 +158,6 @@ export default function DrivePage() {
     }
   }
 
-  // If a spreadsheet is already linked (from initial setup), auto-sync once on load
-  useEffect(() => {
-    if (existingSheetId && channels.length > 0 && !autoExported) {
-      (async () => {
-        try {
-          await saveToSpreadsheet()
-        } finally {
-          setAutoExported(true)
-        }
-      })()
-    }
-  }, [existingSheetId, channels.length, autoExported])
-
   return (
     <ProtectedRoute>
     <div className="min-h-screen bg-background">
@@ -195,7 +182,19 @@ export default function DrivePage() {
               <div className="text-sm text-gray-500">Service email</div>
               <div className="flex gap-2">
                 <Input value={serviceEmail} readOnly />
-                <Button type="button" variant="outline" onClick={() => { if (serviceEmail) navigator.clipboard.writeText(serviceEmail) }}>Copy</Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={async () => {
+                    if (serviceEmail) {
+                      await navigator.clipboard.writeText(serviceEmail)
+                      setCopied(true)
+                      setTimeout(() => setCopied(false), 1200)
+                    }
+                  }}
+                >
+                  {copied ? "Copied!" : "Copy"}
+                </Button>
               </div>
             </div>
 
@@ -209,9 +208,9 @@ export default function DrivePage() {
             </div>
 
             <div className="flex gap-2">
-              <Button onClick={checkSheet} disabled={checking}>
+              <Button onClick={checkSheet} disabled={checking || !sheetLink}>
                 {checking && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Check access & Save
+                Check access
               </Button>
             </div>
 
@@ -272,7 +271,7 @@ export default function DrivePage() {
                     Preview Data
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                <DialogContent className="!max-w-[90vw] max-h-[80vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>Spreadsheet Preview</DialogTitle>
                     <DialogDescription>Preview of the channel data that will be exported</DialogDescription>
@@ -311,7 +310,7 @@ export default function DrivePage() {
             </div>
             {saveResult && (
               <div className={`text-sm ${saveResult.ok ? 'text-green-600' : 'text-red-600'}`}>
-                {saveResult.ok ? `Appended ${saveResult.appended || 0} rows.` : saveResult.error}
+                {saveResult.ok ? `Added ${saveResult.appended || 0} rows.` : saveResult.error}
               </div>
             )}
           </CardContent>

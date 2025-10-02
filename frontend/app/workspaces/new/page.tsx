@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -13,20 +13,15 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute"
 export default function NewWorkspacePage() {
   const [name, setName] = useState("")
   const [initialChannels, setInitialChannels] = useState("")
-  const [driveFolderLink, setDriveFolderLink] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [nameTaken, setNameTaken] = useState(false)
   const router = useRouter()
-  // useSearchParams must be read inside a client component's render or wrapped in Suspense.
-  // For simplicity and to avoid a suspense boundary here, read the URL directly.
-  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
+  const searchParams = useSearchParams()
 
   useEffect(() => {
-    const prefill = searchParams?.get('name') || ''
+    const prefill = searchParams.get('name') || ''
     if (prefill) setName(prefill)
-    // searchParams is derived from window.location, no dependencies needed
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [searchParams])
 
   useEffect(() => {
     const ctrl = new AbortController()
@@ -52,8 +47,7 @@ export default function NewWorkspacePage() {
       const params = new URLSearchParams()
       params.set('name', name.trim())
       if (initialChannels.trim()) params.set('channels', initialChannels)
-      if (driveFolderLink.trim()) params.set('sheet', driveFolderLink.trim())
-      router.push(`/workspaces/new/share?${params.toString()}`)
+      router.push(`/workspaces/new/summary?${params.toString()}`)
     } catch (error) {
       alert('Failed to proceed')
     } finally {
@@ -93,16 +87,6 @@ export default function NewWorkspacePage() {
                   value={initialChannels}
                   onChange={(e) => setInitialChannels(e.target.value)}
                   rows={6}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="ws-drive">Google Sheet link (optional)</Label>
-                <Input
-                  id="ws-drive"
-                  placeholder="https://docs.google.com/spreadsheets/d/..."
-                  value={driveFolderLink}
-                  onChange={(e) => setDriveFolderLink(e.target.value)}
                 />
               </div>
 

@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useEffect, useState } from "react"
-import { ArrowLeft, Users, Eye, MessageCircle, Heart, TrendingUp, Calendar, Play, Clock, File, Loader2 } from 'lucide-react'
+import { ArrowLeft, Users, Eye, MessageCircle, Heart, TrendingUp, Calendar, Play, Clock, File, Loader2, ExternalLink } from 'lucide-react'
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute"
@@ -145,6 +145,8 @@ export default function ChannelDashboard() {
   const [addingVideoId, setAddingVideoId] = useState<string | null>(null)
   const [showAddChannelDialog, setShowAddChannelDialog] = useState(false)
   const [pendingVideo, setPendingVideo] = useState<any | null>(null)
+  const [addedVideos, setAddedVideos] = useState<Set<string>>(new Set());
+  const [sheetUrl, setSheetUrl] = useState<string | null>(null);
 
 
   // Update criteria when global criteria changes or on focus
@@ -200,6 +202,12 @@ export default function ChannelDashboard() {
         throw new Error(errorMsg)
       }
       const data = await res.json()
+      if (data.added || data.updated || data.viewsUpdated || data.message) {
+        setAddedVideos(prev => new Set([...prev, video.id]));
+        if (data.spreadsheetUrl) {
+          setSheetUrl(data.spreadsheetUrl);
+        }
+      }
       toast({
         title: data?.updated || data?.viewsUpdated ? "Video updated in 10X10" : (data?.added ? "Video added to 10X10" : "Video already in 10X10"),
         description: data?.sheetTitle ? `Target: ${data.sheetTitle}` : (data?.message || undefined)
@@ -256,6 +264,12 @@ export default function ChannelDashboard() {
       }
       
       const data = await reelRes.json()
+      if (data.added || data.updated || data.viewsUpdated || data.message) {
+        setAddedVideos(prev => new Set([...prev, pendingVideo.id]));
+        if (data.spreadsheetUrl) {
+          setSheetUrl(data.spreadsheetUrl);
+        }
+      }
       toast({
         title: data?.updated || data?.viewsUpdated ? "Video updated in 10X10" : (data?.added ? "Video added to 10X10" : "Video already in 10X10"),
         description: data?.sheetTitle ? `Target: ${data.sheetTitle}` : (data?.message || undefined)
@@ -462,21 +476,30 @@ export default function ChannelDashboard() {
                             {formatNumber(video.likeCount || 0)}
                           </div>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="mt-2"
-                          title="Add to 10X10"
-                          disabled={addingVideoId === video.id}
-                          onClick={() => addToSheet(video)}
-                        >
-                          {addingVideoId === video.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                          ) : (
-                            <File className="h-3 w-3 mr-1" />
-                          )}
-                          Add to 10X10
-                        </Button>
+                        {addedVideos.has(video.id) ? (
+                          <Button asChild variant="ghost" size="sm" className="mt-2">
+                            <a href={sheetUrl || '#'} target="_blank" rel="noopener noreferrer" title="Go to 10X10">
+                              <ExternalLink className="h-3 w-3 mr-1" />
+                              Go to 10X10
+                            </a>
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="mt-2"
+                            title="Add to 10X10"
+                            disabled={addingVideoId === video.id}
+                            onClick={() => addToSheet(video)}
+                          >
+                            {addingVideoId === video.id ? (
+                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                            ) : (
+                              <File className="h-3 w-3 mr-1" />
+                            )}
+                            Add to 10X10
+                          </Button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -532,21 +555,30 @@ export default function ChannelDashboard() {
                             {formatNumber(video.likeCount || 0)}
                           </div>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="mt-2"
-                          title="Add to 10X10"
-                          disabled={addingVideoId === video.id}
-                          onClick={() => addToSheet(video)}
-                        >
-                          {addingVideoId === video.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                          ) : (
-                            <File className="h-3 w-3 mr-1" />
-                          )}
-                          Add to 10X10
-                        </Button>
+                        {addedVideos.has(video.id) ? (
+                          <Button asChild variant="ghost" size="sm" className="mt-2">
+                            <a href={sheetUrl || '#'} target="_blank" rel="noopener noreferrer" title="Go to 10X10">
+                              <ExternalLink className="h-3 w-3 mr-1" />
+                              Go to 10X10
+                            </a>
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="mt-2"
+                            title="Add to 10X10"
+                            disabled={addingVideoId === video.id}
+                            onClick={() => addToSheet(video)}
+                          >
+                            {addingVideoId === video.id ? (
+                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                            ) : (
+                              <File className="h-3 w-3 mr-1" />
+                            )}
+                            Add to 10X10
+                          </Button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -600,20 +632,30 @@ export default function ChannelDashboard() {
                         <TableCell>{formatViewCount(video)}</TableCell>
                         <TableCell>{formatNumber(video.commentCount || 0)}</TableCell>
                         <TableCell>{formatNumber(video.likeCount || 0)}</TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="Add to 10X10"
-                            disabled={addingVideoId === video.id}
-                            onClick={() => addToSheet(video)}
-                          >
-                            {addingVideoId === video.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <File className="h-4 w-4" />
-                            )}
-                          </Button>
+                        <TableCell className="w-32">  {/* Add width to accommodate text */}
+                          {addedVideos.has(video.id) ? (
+                            <Button asChild variant="ghost" size="sm">
+                              <a href={sheetUrl || '#'} target="_blank" rel="noopener noreferrer" title="Go to 10X10">
+                                <ExternalLink className="h-3 w-3 mr-1" />
+                                Go to 10X10
+                              </a>
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Add to 10X10"
+                              disabled={addingVideoId === video.id}
+                              onClick={() => addToSheet(video)}
+                            >
+                              {addingVideoId === video.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                              ) : (
+                                <File className="h-3 w-3 mr-1" />
+                              )}
+                              Add to 10X10
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}

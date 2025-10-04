@@ -814,9 +814,21 @@ export function registerDriveRoutes(app, { getWorkspace, updateWorkspaceSpreadsh
             valueInputOption: 'USER_ENTERED',
             requestBody: { values: [[views]] }
           });
-          return res.json({ ok: true, updated: true, viewsUpdated: true, sheetTitle });
+          return res.json({ 
+            ok: true, 
+            updated: true, 
+            viewsUpdated: true, 
+            sheetTitle, 
+            spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${targetSheet.properties.sheetId}` 
+          });
         }
-        return res.json({ ok: true, added: false, message: 'Reel already exists with current views', sheetTitle });
+        return res.json({ 
+          ok: true, 
+          added: false, 
+          message: 'Reel already exists with current views', 
+          sheetTitle,
+          spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${targetSheet.properties.sheetId}` 
+        });
       }
       
       const appendRes = await sheets.spreadsheets.values.append({
@@ -869,7 +881,12 @@ export function registerDriveRoutes(app, { getWorkspace, updateWorkspaceSpreadsh
         // ignore formatting errors
       }
 
-      res.json({ ok: true, added: true, sheetTitle });
+      res.json({ 
+        ok: true, 
+        added: true, 
+        sheetTitle,
+        spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${targetSheet.properties.sheetId}` 
+      });
     } catch (e) {
       res.status(500).json({ error: e?.message || 'Failed to add reel to spreadsheet' });
     }

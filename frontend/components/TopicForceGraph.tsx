@@ -3,7 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import * as d3 from "d3"
-import { Network, Eye, MessageCircle, Heart, ExternalLink, User, ZoomIn, ZoomOut, RotateCcw } from "lucide-react"
+import { Network, Eye, MessageCircle, Heart, ExternalLink, User, ZoomIn, ZoomOut, RotateCcw, Loader2, File } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { 
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle 
+} from "@/components/ui/alert-dialog"
+import { VideoSheetButton } from "@/components/VideoSheetButton"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -178,6 +184,12 @@ export default function TopicForceGraph({
   const [categoryView, setCategoryView] = useState(false)
   const zoomBehaviorRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null)
 
+  const [addingVideoId, setAddingVideoId] = useState<string | null>(null)
+  const [showAddChannelDialog, setShowAddChannelDialog] = useState(false)
+  const [pendingVideo, setPendingVideo] = useState<Video | null>(null)
+  const [addedVideos, setAddedVideos] = useState<Set<string>>(new Set())
+  const [sheetUrl, setSheetUrl] = useState<string | null>(null)
+  const { toast } = useToast()
   
   // Filtered relationships for both physics and visual display
   const [filteredRelationships, setFilteredRelationships] = useState<Relationship[]>([])
@@ -733,6 +745,110 @@ export default function TopicForceGraph({
     }
   }
 
+  async function addToSheet(video: Video) {
+    if (!video.channelId) {
+      toast({ title: "Error", description: "Missing channel information", variant: "destructive" });
+      return;
+    }
+    setAddingVideoId(video.id)
+    try {
+      const videoLink = getVideoUrl(video)
+      const res = await fetch('/api/drive/add-reel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channelId: video.channelId,
+          videoLink,
+          viewCount: video.viewCount || 0
+        })
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        const errorMsg = err?.error || 'Failed to add to sheet'
+        if (errorMsg.includes('Channel not found in spreadsheet')) {
+          setPendingVideo(video)
+          setShowAddChannelDialog(true)
+          return
+        }
+        throw new Error(errorMsg)
+      }
+      const data = await res.json()
+      if (data.added || data.updated || data.viewsUpdated || data.message) {
+        setAddedVideos(prev => new Set([...prev, video.id]));
+        if (data.spreadsheetUrl) {
+          setSheetUrl(data.spreadsheetUrl);
+        }
+      }
+      toast({
+        title: data?.updated || data?.viewsUpdated ? "Video updated in 10X10" : (data?.added ? "Video added to 10X10" : "Video already in 10X10"),
+        description: data?.sheetTitle ? `Target: ${data.sheetTitle}` : (data?.message || undefined)
+      })
+    } catch (e: any) {
+      toast({
+        title: "Failed to add video",
+        description: e?.message || "An unexpected error occurred.",
+        variant: "destructive"
+      })
+    } finally {
+      setAddingVideoId(null)
+    }
+  }
+
+  async function addChannelThenReel() {
+    if (!pendingVideo) return
+    setShowAddChannelDialog(false)
+    setAddingVideoId(pendingVideo.id)
+    try {
+      const channelRes = await fetch('/api/drive/add-channel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelId: pendingVideo.channelId })
+      })
+      if (!channelRes.ok) {
+        const err = await channelRes.json().catch(() => ({}))
+        throw new Error(err?.error || 'Failed to add channel')
+      }
+      toast({
+        title: "Channel added to 10X10",
+        description: `${pendingVideo.channelTitle || 'Channel'} has been added to the spreadsheet`
+      })
+      const videoLink = getVideoUrl(pendingVideo)
+      const reelRes = await fetch('/api/drive/add-reel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channelId: pendingVideo.channelId,
+          videoLink,
+          viewCount: pendingVideo.viewCount || 0
+        })
+      })
+      if (!reelRes.ok) {
+        const err = await reelRes.json().catch(() => ({}))
+        throw new Error(err?.error || 'Failed to add reel')
+      }
+      const data = await reelRes.json()
+      if (data.added || data.updated || data.viewsUpdated || data.message) {
+        setAddedVideos(prev => new Set([...prev, pendingVideo.id]));
+        if (data.spreadsheetUrl) {
+          setSheetUrl(data.spreadsheetUrl);
+        }
+      }
+      toast({
+        title: data?.updated || data?.viewsUpdated ? "Video updated in 10X10" : (data?.added ? "Video added to 10X10" : "Video already in 10X10"),
+        description: data?.sheetTitle ? `Target: ${data.sheetTitle}` : (data?.message || undefined)
+      })
+    } catch (e: any) {
+      toast({
+        title: "Failed to add video",
+        description: e?.message || "An unexpected error occurred.",
+        variant: "destructive"
+      })
+    } finally {
+      setAddingVideoId(null)
+      setPendingVideo(null)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <Card className="h-[600px]">
@@ -1084,6 +1200,16 @@ export default function TopicForceGraph({
                             {formatNumber(video.commentCount || 0)}
                           </div>
                         </div>
+                        <div className="flex justify-end mt-1">
+                          <VideoSheetButton 
+                            video={video} 
+                            isAdded={addedVideos.has(video.id)} 
+                            isLoading={addingVideoId === video.id} 
+                            onAdd={() => addToSheet(video)} 
+                            sheetUrl={sheetUrl} 
+                            className="text-sm" 
+                          />
+                        </div>
                         <div className="flex items-center justify-between mt-2">
                           <Badge variant="outline" className="text-xs">
                             {video.platform === 'youtube' ? 'YouTube' : 'Instagram'}
@@ -1107,6 +1233,20 @@ export default function TopicForceGraph({
               </div>
             )}
           </CardContent>
+          <AlertDialog open={showAddChannelDialog} onOpenChange={setShowAddChannelDialog}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Add Channel to 10X10?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {pendingVideo?.channelTitle} isn't in your 10X10 spreadsheet yet. Would you like to add it first and then add this video?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => { setPendingVideo(null); setAddingVideoId(null); }}>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={addChannelThenReel}>Add Channel and Video</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </Card>
       )}
     </div>

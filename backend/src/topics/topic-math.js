@@ -1,6 +1,7 @@
 // Topic Ranking
 import { getAllVideos, getAllTopics, getAllVideoTopics } from '../database/index.js';
 import { calculateEngagementScore } from '../utils/engagement-utils.js';
+import { listChannels } from '../database/channels.js';
 
 // Export the category threshold constant
 export const CATEGORY_THRESHOLD = 0.5;
@@ -56,6 +57,10 @@ export function getTopicGraph(regularizationWeight = 10, minimumSampleSize = 1, 
     const topics = getAllTopics();
     // Get the video_topics into memory (this is stupid isn't it...)
     const videoTopics = getAllVideoTopics();
+    const channelsMap = listChannels().reduce((acc, ch) => {
+      acc[ch.id] = ch;
+      return acc;
+    }, {});
     // Create an array of topic objects with video counts
     const allTopicObjects = topics.map(topic => {
         const matchingVideoTopics = videoTopics.filter(videoTopic => videoTopic.topic_id === topic.id);
@@ -103,7 +108,11 @@ export function getTopicGraph(regularizationWeight = 10, minimumSampleSize = 1, 
             likes: video.likeCount || 0,
             hasCallToAction: video.hasCallToAction || 0,
             id: video.id,
-            publishedAt: video.publishedAt
+            publishedAt: video.publishedAt,
+            channelId: video.channelId,
+            platform: video.platform,
+            shortCode: video.shortCode,
+            channelTitle: channelsMap[video.channelId]?.title || 'Unknown Channel'
         }));
     });
     // 6: Compute directional topic connections 

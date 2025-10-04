@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Grid3X3, Flame, ChevronDown, Eye, MessageCircle, Heart, LinkIcon, HelpCircle, ExternalLink } from "lucide-react"
+import { Grid3X3, Flame, ChevronDown, Eye, MessageCircle, Heart, LinkIcon, HelpCircle, ExternalLink, Loader2, File } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,6 +10,12 @@ import { Progress } from "@/components/ui/progress"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Label } from "@/components/ui/label"
+import { useToast } from "@/hooks/use-toast"
+import { 
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle 
+} from "@/components/ui/alert-dialog"
+import { VideoSheetButton } from "./VideoSheetButton"
 
 // Type definitions
 type Topic = {
@@ -58,6 +64,13 @@ export default function TopPerforming() {
     }
     return 40
   })
+
+  const [addingVideoId, setAddingVideoId] = useState<string | null>(null)
+  const [showAddChannelDialog, setShowAddChannelDialog] = useState(false)
+  const [pendingVideo, setPendingVideo] = useState<any | null>(null)
+  const [addedVideos, setAddedVideos] = useState<Set<string>>(new Set())
+  const [sheetUrl, setSheetUrl] = useState<string | null>(null)
+  const { toast } = useToast()
 
   // Sync input value when maxNodes changes
   useEffect(() => {
@@ -189,6 +202,110 @@ export default function TopPerforming() {
     if (!video?.hasCallToAction) return null;
     return <Badge variant="destructive" className="ml-2">CTA</Badge>;
   };
+
+  async function addToSheet(video: any) {
+    if (!video.channelId) {
+      toast({ title: "Error", description: "Missing channel information", variant: "destructive" });
+      return;
+    }
+    setAddingVideoId(video.id)
+    try {
+      const videoLink = getVideoUrl(video)
+      const res = await fetch('/api/drive/add-reel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channelId: video.channelId,
+          videoLink,
+          viewCount: video.views || 0
+        })
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        const errorMsg = err?.error || 'Failed to add to sheet'
+        if (errorMsg.includes('Channel not found in spreadsheet')) {
+          setPendingVideo(video)
+          setShowAddChannelDialog(true)
+          return
+        }
+        throw new Error(errorMsg)
+      }
+      const data = await res.json()
+      if (data.added || data.updated || data.viewsUpdated || data.message) {
+        setAddedVideos(prev => new Set([...prev, video.id]));
+        if (data.spreadsheetUrl) {
+          setSheetUrl(data.spreadsheetUrl);
+        }
+      }
+      toast({
+        title: data?.updated || data?.viewsUpdated ? "Video updated in 10X10" : (data?.added ? "Video added to 10X10" : "Video already in 10X10"),
+        description: data?.sheetTitle ? `Target: ${data.sheetTitle}` : (data?.message || undefined)
+      })
+    } catch (e: any) {
+      toast({
+        title: "Failed to add video",
+        description: e?.message || "An unexpected error occurred.",
+        variant: "destructive"
+      })
+    } finally {
+      setAddingVideoId(null)
+    }
+  }
+
+  async function addChannelThenReel() {
+    if (!pendingVideo) return
+    setShowAddChannelDialog(false)
+    setAddingVideoId(pendingVideo.id)
+    try {
+      const channelRes = await fetch('/api/drive/add-channel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelId: pendingVideo.channelId })
+      })
+      if (!channelRes.ok) {
+        const err = await channelRes.json().catch(() => ({}))
+        throw new Error(err?.error || 'Failed to add channel')
+      }
+      toast({
+        title: "Channel added to 10X10",
+        description: `${pendingVideo.channelTitle} has been added to the spreadsheet`
+      })
+      const videoLink = getVideoUrl(pendingVideo)
+      const reelRes = await fetch('/api/drive/add-reel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channelId: pendingVideo.channelId,
+          videoLink,
+          viewCount: pendingVideo.views || 0
+        })
+      })
+      if (!reelRes.ok) {
+        const err = await reelRes.json().catch(() => ({}))
+        throw new Error(err?.error || 'Failed to add reel')
+      }
+      const data = await reelRes.json()
+      if (data.added || data.updated || data.viewsUpdated || data.message) {
+        setAddedVideos(prev => new Set([...prev, pendingVideo.id]));
+        if (data.spreadsheetUrl) {
+          setSheetUrl(data.spreadsheetUrl);
+        }
+      }
+      toast({
+        title: data?.updated || data?.viewsUpdated ? "Video updated in 10X10" : (data?.added ? "Video added to 10X10" : "Video already in 10X10"),
+        description: data?.sheetTitle ? `Target: ${data.sheetTitle}` : (data?.message || undefined)
+      })
+    } catch (e: any) {
+      toast({
+        title: "Failed to add video",
+        description: e?.message || "An unexpected error occurred.",
+        variant: "destructive"
+      })
+    } finally {
+      setAddingVideoId(null)
+      setPendingVideo(null)
+    }
+  }
 
   if (loading) {
     return (
@@ -407,6 +524,16 @@ export default function TopPerforming() {
                                         {formatNumber(video.likes)}
                                       </div>
                                     </div>
+                                    <div className="flex justify-end mt-1">
+                                      <VideoSheetButton 
+                                        video={video} 
+                                        isAdded={addedVideos.has(video.id)} 
+                                        isLoading={addingVideoId === video.id} 
+                                        onAdd={(e) => { e?.stopPropagation(); addToSheet(video); }} 
+                                        sheetUrl={sheetUrl} 
+                                        className="mt-1 text-xs h-5 px-2" 
+                                      />
+                                    </div>
                                   </div>
                                 ))}
                               </CollapsibleContent>
@@ -544,6 +671,16 @@ export default function TopPerforming() {
                                     {formatNumber(video.likes)}
                                   </div>
                                 </div>
+                                <div className="flex justify-end mt-1">
+                                  <VideoSheetButton 
+                                    video={video} 
+                                    isAdded={addedVideos.has(video.id)} 
+                                    isLoading={addingVideoId === video.id} 
+                                    onAdd={(e) => { e?.stopPropagation(); addToSheet(video); }} 
+                                    sheetUrl={sheetUrl} 
+                                    className="mt-1 text-xs h-5 px-2" 
+                                  />
+                                </div>
                               </div>
                             ))}
                           </CollapsibleContent>
@@ -585,6 +722,20 @@ export default function TopPerforming() {
           </div>
         </>
       )}
+      <AlertDialog open={showAddChannelDialog} onOpenChange={setShowAddChannelDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Add Channel to 10X10?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingVideo?.channelTitle} isn't in your 10X10 spreadsheet yet. Would you like to add it first and then add this video?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setPendingVideo(null); setAddingVideoId(null); }}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={addChannelThenReel}>Add Channel and Video</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

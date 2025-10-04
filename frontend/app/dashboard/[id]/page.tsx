@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
+import { VideoSheetButton } from "@/components/VideoSheetButton"
 
 
 function formatNumber(num: number) {
@@ -445,24 +446,23 @@ export default function ChannelDashboard() {
                       <div className="flex items-center justify-center w-8 h-8 bg-primary text-primary-foreground rounded-full text-sm font-bold">
                         {index + 1}
                       </div>
-                      <a href={getPostUrl(video)} target="_blank" rel="noopener noreferrer">
+                      <div 
+                        className="flex-1 cursor-pointer" 
+                        onClick={() => window.open(getPostUrl(video), '_blank', 'noopener,noreferrer')}
+                      >
                         <img 
                           src={getImageUrl(video)}
                           alt={video.title}
                           className={getImageClasses(video, 'large')}
                         />
-                      </a>
-                      <div className="flex-1">
-                        <h3 className="font-semibold line-clamp-2">
-                          <a href={getPostUrl(video)} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                        <h3 className="font-semibold line-clamp-2 mt-2">
+                          <span className="hover:underline block">
                             {cleanTitle(video.title)}
-                          </a>
+                          </span>
                           <CtaBadge video={video} />
                         </h3>
                         <p className="text-sm text-muted-foreground">{formatDate(video.publishedAt)}</p>
-                      </div>
-                      <div className="text-right space-y-1">
-                        <div className="flex items-center gap-4 text-sm">
+                        <div className="flex items-center gap-4 text-sm mt-2">
                           <div className="flex items-center gap-1">
                             <Eye className="h-3 w-3" />
                             {formatViewCount(video)}
@@ -476,30 +476,16 @@ export default function ChannelDashboard() {
                             {formatNumber(video.likeCount || 0)}
                           </div>
                         </div>
-                        {addedVideos.has(video.id) ? (
-                          <Button asChild variant="ghost" size="sm" className="mt-2">
-                            <a href={sheetUrl || '#'} target="_blank" rel="noopener noreferrer" title="Go to 10X10">
-                              <ExternalLink className="h-3 w-3 mr-1" />
-                              Go to 10X10
-                            </a>
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="mt-2"
-                            title="Add to 10X10"
-                            disabled={addingVideoId === video.id}
-                            onClick={() => addToSheet(video)}
-                          >
-                            {addingVideoId === video.id ? (
-                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                            ) : (
-                              <File className="h-3 w-3 mr-1" />
-                            )}
-                            Add to 10X10
-                          </Button>
-                        )}
+                      </div>
+                      <div className="text-right">
+                        <VideoSheetButton 
+                          video={video} 
+                          isAdded={addedVideos.has(video.id)} 
+                          isLoading={addingVideoId === video.id} 
+                          onAdd={() => addToSheet(video)} 
+                          sheetUrl={sheetUrl} 
+                          className="mt-2" 
+                        />
                       </div>
                     </div>
                   ))}
@@ -521,27 +507,26 @@ export default function ChannelDashboard() {
                       <div className="flex items-center justify-center w-8 h-8 bg-orange-500 text-white rounded-full text-sm font-bold">
                         🔥
                       </div>
-                      <a href={getPostUrl(video)} target="_blank" rel="noopener noreferrer">
+                      <div 
+                        className="flex-1 cursor-pointer" 
+                        onClick={() => window.open(getPostUrl(video), '_blank', 'noopener,noreferrer')}
+                      >
                         <img 
                           src={getImageUrl(video)}
                           alt={video.title}
                           className={getImageClasses(video, 'large')}
                         />
-                      </a>
-                      <div className="flex-1">
-                        <h3 className="font-semibold line-clamp-2">
-                          <a href={getPostUrl(video)} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                        <h3 className="font-semibold line-clamp-2 mt-2">
+                          <span className="hover:underline block">
                             {cleanTitle(video.title)}
-                          </a>
+                          </span>
                           <CtaBadge video={video} />
                         </h3>
                         <p className="text-sm text-muted-foreground">{formatDate(video.publishedAt)}</p>
                         <Badge variant="destructive" className="mt-1">
                           {criteria.viralMultiplier}x+ {criteria.viralMethod === 'avgViews' ? 'average views' : 'subscribers'} multiplier
                         </Badge>
-                      </div>
-                      <div className="text-right space-y-1">
-                        <div className="flex items-center gap-4 text-sm">
+                        <div className="flex items-center gap-4 text-sm mt-2">
                           <div className="flex items-center gap-1">
                             <Eye className="h-3 w-3" />
                             {formatViewCount(video)}
@@ -555,30 +540,16 @@ export default function ChannelDashboard() {
                             {formatNumber(video.likeCount || 0)}
                           </div>
                         </div>
-                        {addedVideos.has(video.id) ? (
-                          <Button asChild variant="ghost" size="sm" className="mt-2">
-                            <a href={sheetUrl || '#'} target="_blank" rel="noopener noreferrer" title="Go to 10X10">
-                              <ExternalLink className="h-3 w-3 mr-1" />
-                              Go to 10X10
-                            </a>
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="mt-2"
-                            title="Add to 10X10"
-                            disabled={addingVideoId === video.id}
-                            onClick={() => addToSheet(video)}
-                          >
-                            {addingVideoId === video.id ? (
-                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                            ) : (
-                              <File className="h-3 w-3 mr-1" />
-                            )}
-                            Add to 10X10
-                          </Button>
-                        )}
+                      </div>
+                      <div className="text-right">
+                        <VideoSheetButton 
+                          video={video} 
+                          isAdded={addedVideos.has(video.id)} 
+                          isLoading={addingVideoId === video.id} 
+                          onAdd={() => addToSheet(video)} 
+                          sheetUrl={sheetUrl} 
+                          className="mt-2" 
+                        />
                       </div>
                     </div>
                   ))}
@@ -633,29 +604,14 @@ export default function ChannelDashboard() {
                         <TableCell>{formatNumber(video.commentCount || 0)}</TableCell>
                         <TableCell>{formatNumber(video.likeCount || 0)}</TableCell>
                         <TableCell className="w-32">  {/* Add width to accommodate text */}
-                          {addedVideos.has(video.id) ? (
-                            <Button asChild variant="ghost" size="sm">
-                              <a href={sheetUrl || '#'} target="_blank" rel="noopener noreferrer" title="Go to 10X10">
-                                <ExternalLink className="h-3 w-3 mr-1" />
-                                Go to 10X10
-                              </a>
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              title="Add to 10X10"
-                              disabled={addingVideoId === video.id}
-                              onClick={() => addToSheet(video)}
-                            >
-                              {addingVideoId === video.id ? (
-                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                              ) : (
-                                <File className="h-3 w-3 mr-1" />
-                              )}
-                              Add to 10X10
-                            </Button>
-                          )}
+                          <VideoSheetButton 
+                            video={video} 
+                            isAdded={addedVideos.has(video.id)} 
+                            isLoading={addingVideoId === video.id} 
+                            onAdd={() => addToSheet(video)} 
+                            sheetUrl={sheetUrl} 
+                            className="" 
+                          />
                         </TableCell>
                       </TableRow>
                     ))}

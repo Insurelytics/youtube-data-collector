@@ -1,7 +1,63 @@
 import fs from 'node:fs';
 import { google } from 'googleapis';
+import Instructor from "@instructor-ai/instructor";
+import OpenAI from "openai";
+import { z } from "zod";
 
 const SHEET_HEADER = ['Company Name', 'Front Man', 'IG Handle', 'Followers', 'Notes'];
+
+const ChannelInfoSchema = z.object({
+  companyName: z.string().describe("The company or brand name. Empty string if can't determine from the channel name and bio."),
+  frontMan: z.string().describe("The front man or main person representing the channel/company. Empty string if can't determine from the channel name and bio."),
+  humanReadableIdentifier: z.string().describe("A simplified identifier for the channel/company. Must not be an empty string. Must be all CAPS, preferably 2-3 words, and easily match to the channel name, company name, and/or front man name.")
+});
+
+let aiClient = null;
+function getAIClient() {
+  if (!aiClient && process.env.OPENAI_API_KEY) {
+    const oai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      organization: process.env.OPENAI_ORG_ID ?? undefined
+    });
+    aiClient = Instructor({
+      client: oai,
+      mode: "FUNCTIONS"
+    });
+  }
+  return aiClient;
+}
+
+async function extractChannelInfo(channelName, bio) {
+  const client = getAIClient();
+  if (!client) {
+    console.warn('[AI] OpenAI API key not configured, skipping AI extraction');
+    const fallbackId = (channelName || '').toString().trim().toUpperCase() || 'CHANNEL';
+    return { companyName: '', frontMan: '', humanReadableIdentifier: fallbackId };
+  }
+  
+  try {
+    const result = await client.chat.completions.create({
+      messages: [{ 
+        role: "user", 
+        content: `Given this channel information, identify the company name and front man (main person). Set to "" if you can't tell from this info.
+
+Channel Name: ${channelName}
+Bio: ${bio || 'N/A'}`
+      }],
+      model: "gpt-4.1-mini",
+      response_model: { 
+        schema: ChannelInfoSchema, 
+        name: "ChannelInfo"
+      }
+    });
+    console.log('[AI] Channel info extracted:', result);
+    return result;
+  } catch (error) {
+    console.error('[AI] Failed to extract channel info:', error);
+    const fallbackId = (channelName || '').toString().trim().toUpperCase() || 'CHANNEL';
+    return { companyName: '', frontMan: '', humanReadableIdentifier: fallbackId };
+  }
+}
 
 function formatFollowers(n) {
   if (n == null || isNaN(Number(n))) return '';
@@ -44,6 +100,116 @@ async function addHeaderIfNeeded(sheets, spreadsheetId) {
       insertDataOption: 'INSERT_ROWS',
       requestBody: { values: [SHEET_HEADER] }
     });
+    try {
+      const meta = await sheets.spreadsheets.get({ spreadsheetId, includeGridData: false });
+      const sheetsListMeta = meta?.data?.sheets || [];
+      const firstSheetId = sheetsListMeta[0]?.properties?.sheetId;
+      const firstSheetTitle = sheetsListMeta[0]?.properties?.title;
+      const parseA1 = (a1) => {
+        if (!a1 || typeof a1 !== 'string') return null;
+        const m = a1.match(/^([^!]+)!([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+        if (!m) return null;
+        const sheetTitle = m[1];
+        const startRow = parseInt(m[3], 10);
+        const endRow = parseInt(m[5], 10);
+        const colToIndex = (col) => col.split('').reduce((acc, ch) => acc * 26 + (ch.charCodeAt(0) - 64), 0) - 1;
+        return {
+          sheetTitle,
+          startRowIndex: Math.max(0, startRow - 1),
+          endRowIndex: endRow,
+          startColumnIndex: colToIndex(m[2]),
+          endColumnIndex: colToIndex(m[4]) + 1
+        };
+      };
+      const findSheetIdByTitle = (title) => {
+        const s = sheetsListMeta.find(x => x?.properties?.title === title);
+        return s?.properties?.sheetId ?? firstSheetId;
+      };
+      const requests = [];
+      if (firstSheetId != null) {
+        const base = 100;
+        const sizes = [
+          Math.round(2.0 * base),
+          Math.round(1.5 * base),
+          Math.round(2.0 * base),
+          Math.round(1.5 * base),
+          Math.round(5.0 * base),
+        ];
+        const resizeReqs = sizes.map((px, idx) => ({
+          updateDimensionProperties: {
+            range: {
+              sheetId: firstSheetId,
+              dimension: 'COLUMNS',
+              startIndex: idx,
+              endIndex: idx + 1,
+            },
+            properties: { pixelSize: px },
+            fields: 'pixelSize',
+          }
+        }));
+        requests.push(...resizeReqs);
+      }
+      const headerUpdatedRangeA1 = headerAppend?.data?.updates?.updatedRange;
+      const headerParsed = parseA1(headerUpdatedRangeA1);
+      const addWrapRequest = (parsed) => {
+        if (!parsed) return;
+        const sheetId = findSheetIdByTitle(parsed.sheetTitle || firstSheetTitle);
+        if (sheetId == null) return;
+        requests.push({
+          repeatCell: {
+            range: {
+              sheetId,
+              startRowIndex: parsed.startRowIndex,
+              endRowIndex: parsed.endRowIndex,
+              startColumnIndex: 0,
+              endColumnIndex: 5,
+            },
+            cell: { userEnteredFormat: { wrapStrategy: 'WRAP' } },
+            fields: 'userEnteredFormat.wrapStrategy'
+          }
+        });
+      };
+      addWrapRequest(headerParsed);
+      // Ensure header is bold and data rows are not bold
+      if (headerParsed) {
+        const sheetId = findSheetIdByTitle(headerParsed.sheetTitle || firstSheetTitle);
+        if (sheetId != null) {
+          // Bold header row (A1:E1)
+          requests.push({
+            repeatCell: {
+              range: {
+                sheetId,
+                startRowIndex: headerParsed.startRowIndex,
+                endRowIndex: headerParsed.endRowIndex,
+                startColumnIndex: 0,
+                endColumnIndex: 5,
+              },
+              cell: { userEnteredFormat: { textFormat: { bold: true } } },
+              fields: 'userEnteredFormat.textFormat.bold'
+            }
+          });
+          // Set non-header rows (A2:E1000) to not bold
+          requests.push({
+            repeatCell: {
+              range: {
+                sheetId,
+                startRowIndex: headerParsed.startRowIndex + 1,
+                endRowIndex: headerParsed.startRowIndex + 1000,
+                startColumnIndex: 0,
+                endColumnIndex: 5,
+              },
+              cell: { userEnteredFormat: { textFormat: { bold: false } } },
+              fields: 'userEnteredFormat.textFormat.bold'
+            }
+          });
+        }
+      }
+      if (requests.length) {
+        await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
+      }
+    } catch (_) {
+      // Ignore column resizing errors
+    }
     return { added: true, range: headerAppend?.data?.updates?.updatedRange || null };
   }
   
@@ -363,7 +529,7 @@ export function registerDriveRoutes(app, { getWorkspace, updateWorkspaceSpreadsh
         const currentRow = values[foundRowIndex];
         const currentFollowers = (currentRow[3] || '').toString().trim();
         if (currentFollowers !== newFollowers) {
-          const rowNum = foundRowIndex + 2;
+          const rowNum = foundRowIndex + 1;
           await sheets.spreadsheets.values.update({
             spreadsheetId,
             range: `D${rowNum}`,
@@ -375,9 +541,20 @@ export function registerDriveRoutes(app, { getWorkspace, updateWorkspaceSpreadsh
           return res.json({ ok: true, added: false, message: 'Channel already exists with current subscribers' });
         }
       } else {
+        // If this is the first channel row (row 2), sanity check there is only one sheet
+        if (values.length <= 1) {
+          const meta = await sheets.spreadsheets.get({ spreadsheetId, includeGridData: false });
+          const sheetsCount = (meta?.data?.sheets || []).length;
+          // TODO: Make this first-channel sheet integrity check more robust for future versions
+          if (sheetsCount > 1) {
+            return res.status(400).json({ error: 'Spreadsheet corrupted: unexpected extra sheet. Please contact the simplarity AI team.' });
+          }
+        }
+
+        const channelInfo = await extractChannelInfo(channel.title || channel.channelName || '', channel.biography || '');
         const row = [
-          companyName,
-          '',
+          channelInfo.companyName || channelInfo.frontMan || '',
+          channelInfo.frontMan || '',
           igLink,
           newFollowers,
           ''
@@ -389,6 +566,119 @@ export function registerDriveRoutes(app, { getWorkspace, updateWorkspaceSpreadsh
           insertDataOption: 'INSERT_ROWS',
           requestBody: { values: [row] }
         });
+        // Best-effort: unbold the newly added row after a brief delay if it inherited bold formatting
+        try {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const updatedRange = appendRes?.data?.updates?.updatedRange;
+          if (typeof updatedRange === 'string') {
+            // Parse A1 range like: Sheet1!A10:E10
+            const m = updatedRange.match(/^([^!]+)!([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+            if (m) {
+              const sheetTitle = m[1];
+              const startRow = Math.max(0, parseInt(m[3], 10) - 1);
+              const endRow = Math.max(startRow + 1, parseInt(m[5], 10));
+              const meta = await sheets.spreadsheets.get({ spreadsheetId, includeGridData: false });
+              const sheet = (meta?.data?.sheets || []).find(s => s?.properties?.title === sheetTitle);
+              const sheetId = sheet?.properties?.sheetId;
+              if (sheetId != null) {
+                await sheets.spreadsheets.batchUpdate({
+                  spreadsheetId,
+                  requestBody: {
+                    requests: [
+                      {
+                        repeatCell: {
+                          range: {
+                            sheetId,
+                            startRowIndex: startRow,
+                            endRowIndex: endRow,
+                            startColumnIndex: 0,
+                            endColumnIndex: 5,
+                          },
+                          cell: { userEnteredFormat: { textFormat: { bold: false } } },
+                          fields: 'userEnteredFormat.textFormat.bold'
+                        }
+                      }
+                    ]
+                  }
+                });
+              }
+            }
+          }
+        } catch (_) {
+          // ignore formatting errors
+        }
+
+        // Create reels sheet named exactly as humanReadableIdentifier and add styled header
+        const reelsTitle = (channelInfo && channelInfo.humanReadableIdentifier) ? String(channelInfo.humanReadableIdentifier) : 'CHANNEL';
+        try {
+          const addSheetRes = await sheets.spreadsheets.batchUpdate({
+            spreadsheetId,
+            requestBody: {
+              requests: [
+                { addSheet: { properties: { title: reelsTitle } } }
+              ]
+            }
+          });
+          const added = addSheetRes?.data?.replies?.[0]?.addSheet?.properties;
+          const reelsSheetId = added?.sheetId;
+          // Write header
+          await sheets.spreadsheets.values.update({
+            spreadsheetId,
+            range: `${reelsTitle}!A1:D1`,
+            valueInputOption: 'RAW',
+            requestBody: { values: [[ 'LINK', 'VIEWS', 'HOOK', 'NOTES' ]] }
+          });
+          // Apply black background with white text for header A1:D1 and resize columns
+          if (reelsSheetId != null) {
+            const base = 100;
+            const sizes = [
+              Math.round(2.0 * base),  // LINK: 200
+              Math.round(1.0 * base),  // VIEWS: 100
+              Math.round(1.5 * base),  // HOOK: 150
+              Math.round(3.0 * base),  // NOTES: 300
+            ];
+            const resizeReqs = sizes.map((px, idx) => ({
+              updateDimensionProperties: {
+                range: {
+                  sheetId: reelsSheetId,
+                  dimension: 'COLUMNS',
+                  startIndex: idx,
+                  endIndex: idx + 1,
+                },
+                properties: { pixelSize: px },
+                fields: 'pixelSize',
+              }
+            }));
+            await sheets.spreadsheets.batchUpdate({
+              spreadsheetId,
+              requestBody: {
+                requests: [
+                  ...resizeReqs,
+                  {
+                    repeatCell: {
+                      range: {
+                        sheetId: reelsSheetId,
+                        startRowIndex: 0,
+                        endRowIndex: 1,
+                        startColumnIndex: 0,
+                        endColumnIndex: 4,
+                      },
+                      cell: { userEnteredFormat: {
+                        backgroundColor: { red: 0, green: 0, blue: 0 },
+                        textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 } }
+                      } },
+                      fields: 'userEnteredFormat(backgroundColor,textFormat.foregroundColor)'
+                    }
+                  }
+                ]
+              }
+            });
+          }
+        } catch (err) {
+          // If reels sheet creation fails, return error to the frontend
+          return res.status(500).json({ error: err?.message || 'Failed to create reels sheet' });
+        }
+
         return res.json({ 
           ok: true, 
           added: true, 
@@ -398,155 +688,6 @@ export function registerDriveRoutes(app, { getWorkspace, updateWorkspaceSpreadsh
       }
     } catch (e) {
       res.status(500).json({ error: e?.message || 'Failed to add channel to spreadsheet' });
-    }
-  });
-
-  app.post('/api/drive/export-channels', async (req, res) => {
-    try {
-      const providedId = (req.body?.spreadsheetId || '').toString();
-      const ws = getWorkspace(req.workspaceId);
-      const spreadsheetId = providedId || (ws && ws.spreadsheetId ? String(ws.spreadsheetId) : '');
-      if (!spreadsheetId) return res.status(400).json({ error: 'spreadsheetId not set for workspace and not provided' });
-
-      const sheets = await getAuthenticatedSheetsClient();
-      const headerResult = await addHeaderIfNeeded(sheets, spreadsheetId);
-      const existingLinks = await getExistingLinks(sheets, spreadsheetId);
-
-      const channels = listChannels();
-      const formattedRows = channels.map((c) => {
-        const companyName = c.title || c.channelName || '-';
-        const handle = (c.handle || '').toString().replace(/^@+/, '');
-        let igLink = '-';
-        if (handle) {
-          if ((c.platform || '').toLowerCase() === 'instagram') {
-            igLink = `https://www.instagram.com/${handle}`;
-          } else {
-            igLink = `https://www.youtube.com/@${handle}`;
-          }
-        }
-        return [
-          companyName,
-          '',
-          igLink,
-          formatFollowers(typeof c.subscriberCount === 'number' ? c.subscriberCount : null),
-          ''
-        ];
-      });
-      
-      const rows = formattedRows.filter(r => {
-        const link = (r[2] || '').toString().trim().toLowerCase();
-        return link && !existingLinks.has(link);
-      });
-
-      if (rows.length === 0 && !headerResult.added) {
-        return res.json({ ok: true, appended: 0, headerAdded: false });
-      }
-
-      let totalAppended = headerResult.added ? 1 : 0;
-      let headerUpdatedRangeA1 = headerResult.range;
-      let dataUpdatedRangeA1 = null;
-
-      if (rows.length) {
-        const appendRes = await sheets.spreadsheets.values.append({
-          spreadsheetId,
-          range: 'A1',
-          valueInputOption: 'RAW',
-          insertDataOption: 'INSERT_ROWS',
-          requestBody: { values: rows }
-        });
-        const updates = appendRes?.data?.updates;
-        const updated = (updates && (updates.updatedRows || updates.updatedCells)) ? (updates.updatedRows || rows.length) : rows.length;
-        totalAppended += updated;
-        dataUpdatedRangeA1 = appendRes?.data?.updates?.updatedRange || null;
-      }
-
-      try {
-        const meta = await sheets.spreadsheets.get({ spreadsheetId, includeGridData: false });
-        const sheetsListMeta = meta?.data?.sheets || [];
-
-        const parseA1 = (a1) => {
-          if (!a1 || typeof a1 !== 'string') return null;
-          const m = a1.match(/^([^!]+)!([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
-          if (!m) return null;
-          const sheetTitle = m[1];
-          const startRow = parseInt(m[3], 10);
-          const endRow = parseInt(m[5], 10);
-          const colToIndex = (col) => col.split('').reduce((acc, ch) => acc * 26 + (ch.charCodeAt(0) - 64), 0) - 1;
-          return {
-            sheetTitle,
-            startRowIndex: Math.max(0, startRow - 1),
-            endRowIndex: endRow,
-            startColumnIndex: colToIndex(m[2]),
-            endColumnIndex: colToIndex(m[4]) + 1
-          };
-        };
-
-        const firstSheetId = sheetsListMeta[0]?.properties?.sheetId;
-        const firstSheetTitle = sheetsListMeta[0]?.properties?.title;
-        const findSheetIdByTitle = (title) => {
-          const s = sheetsListMeta.find(x => x?.properties?.title === title);
-          return s?.properties?.sheetId ?? firstSheetId;
-        };
-
-        const requests = [];
-
-        if (firstSheetId != null) {
-          const base = 100;
-          const sizes = [
-            Math.round(2.0 * base),
-            Math.round(1.5 * base),
-            Math.round(2.0 * base),
-            Math.round(1.5 * base),
-            Math.round(5.0 * base),
-          ];
-          const resizeReqs = sizes.map((px, idx) => ({
-            updateDimensionProperties: {
-              range: {
-                sheetId: firstSheetId,
-                dimension: 'COLUMNS',
-                startIndex: idx,
-                endIndex: idx + 1,
-              },
-              properties: { pixelSize: px },
-              fields: 'pixelSize',
-            }
-          }));
-          requests.push(...resizeReqs);
-        }
-
-        const headerParsed = parseA1(headerUpdatedRangeA1);
-        const dataParsed = parseA1(dataUpdatedRangeA1);
-        const addWrapRequest = (parsed) => {
-          if (!parsed) return;
-          const sheetId = findSheetIdByTitle(parsed.sheetTitle || firstSheetTitle);
-          if (sheetId == null) return;
-          requests.push({
-            repeatCell: {
-              range: {
-                sheetId,
-                startRowIndex: parsed.startRowIndex,
-                endRowIndex: parsed.endRowIndex,
-                startColumnIndex: 0,
-                endColumnIndex: 5,
-              },
-              cell: { userEnteredFormat: { wrapStrategy: 'WRAP' } },
-              fields: 'userEnteredFormat.wrapStrategy'
-            }
-          });
-        };
-        addWrapRequest(headerParsed);
-        addWrapRequest(dataParsed);
-
-        if (requests.length) {
-          await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
-        }
-      } catch (_) {
-        // Ignore column resizing errors
-      }
-
-      res.json({ ok: true, appended: totalAppended, headerAdded: headerResult.added });
-    } catch (e) {
-      res.status(500).json({ error: e?.message || 'Failed to export channels' });
     }
   });
 

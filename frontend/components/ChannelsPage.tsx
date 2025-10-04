@@ -487,7 +487,7 @@ export function ChannelsPage() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    title="Add to Sheet"
+                    title="Add to 10X10"
                     disabled={loadingState.type === 'addingToSheet' && loadingState.channelId === channel.id || loadingState.type === 'syncing' || loadingState.type === 'adding'}
                     onClick={() => addToSheet(channel.id)}
                   >
@@ -582,7 +582,7 @@ export function ChannelsPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { router.push('/drive'); setShowSheetDialog(false); }}>Take to Setup</AlertDialogAction>
+            <AlertDialogAction onClick={() => { router.push('/drive'); setShowSheetDialog(false); }}>Take Me to Setup</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

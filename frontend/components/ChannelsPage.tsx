@@ -1,8 +1,9 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Plus, Trash2, TrendingUp, Users, Eye, Flame, ExternalLink, RefreshCcw, Loader2 } from 'lucide-react'
+import { Plus, Trash2, TrendingUp, Users, Eye, Flame, ExternalLink, RefreshCcw, Loader2, File } from 'lucide-react'
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useToast } from "@/hooks/use-toast"
 import { useJobs } from "@/hooks/useJobs"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 
 type UiChannel = {
   id: string
@@ -104,7 +106,7 @@ function getGlobalCriteria() {
 }
 
 type LoadingState = {
-  type: 'adding' | 'syncing' | 'removing' | null
+  type: 'adding' | 'syncing' | 'removing' | 'addingToSheet' | null
   channelId?: string
   message?: string
 }
@@ -114,9 +116,11 @@ export function ChannelsPage() {
   const [newChannelUrl, setNewChannelUrl] = useState("")
   const [selectedPlatform, setSelectedPlatform] = useState<"instagram" | "youtube">("instagram")
   const [loadingState, setLoadingState] = useState<LoadingState>({ type: null })
+  const [showSheetDialog, setShowSheetDialog] = useState(false)
   const [criteria] = useState(getGlobalCriteria())
   const { toast } = useToast()
   const { runningJobs } = useJobs()
+  const router = useRouter()
   const initialScrapeJobs = runningJobs.filter(j => j.type.includes('Initial Scrape'))
 
   // Simple ETA: 20 minutes per initial scrape job, minus progress on the active one
@@ -317,6 +321,53 @@ export function ChannelsPage() {
     }
   }
 
+  async function addToSheet(channelId: string) {
+    const ch = channels.find(c => c.id === channelId);
+    if (!ch) return;
+    setLoadingState({ type: 'addingToSheet', channelId, message: `Adding ${ch.name} to sheet...` });
+    try {
+      const res = await fetch('/api/drive/add-channel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelId })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const errorMsg = err?.error || 'Failed to add to sheet';
+        throw new Error(errorMsg);
+      }
+      const data = await res.json();
+      if (data.added) {
+        toast({
+          title: "Channel added to sheet",
+          description: `${ch.name} has been added to the spreadsheet.`
+        });
+      } else if (data.updated) {
+        toast({
+          title: "Channel updated in sheet",
+          description: `Subscribers for ${ch.name} have been updated.`
+        });
+      } else {
+        toast({
+          title: "Channel up to date",
+          description: data.message || "No changes needed."
+        });
+      }
+    } catch (e: any) {
+      const errorMsg = e?.message || "An unexpected error occurred.";
+      toast({
+        title: "Failed to update sheet",
+        description: errorMsg,
+        variant: "destructive"
+      });
+      if (errorMsg.includes('spreadsheetId not set')) {
+        setShowSheetDialog(true);
+      }
+    } finally {
+      setLoadingState({ type: null });
+    }
+  }
+
   const handleUrlChange = (url: string) => {
     setNewChannelUrl(url)
     const detectedPlatform = detectPlatform(url)
@@ -424,13 +475,26 @@ export function ChannelsPage() {
                     variant="ghost"
                     size="icon"
                     title="Re-Sync"
-                    disabled={loadingState.type === 'syncing' || loadingState.type === 'adding'}
+                    disabled={loadingState.type === 'syncing' || loadingState.type === 'adding' || loadingState.type === 'addingToSheet'}
                     onClick={() => channel.handle && resyncChannel(channel.handle, channel.platform)}
                   >
                     {loadingState.type === 'syncing' ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <RefreshCcw className="h-4 w-4" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="Add to Sheet"
+                    disabled={loadingState.type === 'addingToSheet' && loadingState.channelId === channel.id || loadingState.type === 'syncing' || loadingState.type === 'adding'}
+                    onClick={() => addToSheet(channel.id)}
+                  >
+                    {loadingState.type === 'addingToSheet' && loadingState.channelId === channel.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <File className="h-4 w-4" />
                     )}
                   </Button>
                   <Button
@@ -508,6 +572,20 @@ export function ChannelsPage() {
           </CardContent>
         </Card>
       )}
+      <AlertDialog open={showSheetDialog} onOpenChange={setShowSheetDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>No Spreadsheet Connected</AlertDialogTitle>
+            <AlertDialogDescription>
+              To add channels to a sheet, please set up a Google Spreadsheet connection in the Drive settings.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { router.push('/drive'); setShowSheetDialog(false); }}>Take to Setup</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

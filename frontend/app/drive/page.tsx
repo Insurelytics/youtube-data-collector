@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { FolderOpen, FileSpreadsheet, Eye, CheckCircle, AlertCircle, Loader2, Save } from "lucide-react"
 
@@ -24,12 +24,6 @@ export default function DrivePage() {
   const [sheetInfo, setSheetInfo] = useState<{ title: string | null, sheets: string[] } | null>(null)
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null)
   const [existingSheetId, setExistingSheetId] = useState<string | null>(null)
-  const [creating, setCreating] = useState(false)
-  const [createResult, setCreateResult] = useState<{ id: string, name: string } | null>(null)
-  const [showPreview, setShowPreview] = useState(false)
-  const [channels, setChannels] = useState<Array<{ title: string, handle: string, subscriberCount?: number, platform?: string }>>([])
-  const [saving, setSaving] = useState(false)
-  const [saveResult, setSaveResult] = useState<{ ok: boolean, appended?: number, error?: string } | null>(null)
   const [copied, setCopied] = useState(false)
 
   // Load service account email for instructions
@@ -72,29 +66,6 @@ export default function DrivePage() {
     })()
   }, [])
 
-  // Load channels for preview
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch('/api/channels', { credentials: 'include' })
-        if (res.ok) {
-          const data = await res.json()
-          const rows = Array.isArray(data) ? data : (data?.rows || data)
-          if (Array.isArray(rows)) {
-            setChannels(rows)
-          }
-        }
-      } catch {}
-    })()
-  }, [])
-
-  const formatNumber = (num?: number) => {
-    if (!num && num !== 0) return ''
-    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
-    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`
-    return String(num)
-  }
-
   const extractSheetId = (url: string) => {
     const m = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/)
     return m ? m[1] : null
@@ -135,26 +106,6 @@ export default function DrivePage() {
       setVerified(false)
     } finally {
       setChecking(false)
-    }
-  }
-
-  const saveToSpreadsheet = async () => {
-    setSaving(true)
-    setSaveResult(null)
-    try {
-      const res = await fetch('/api/drive/export-channels', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({})
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.error || 'Failed to export')
-      setSaveResult({ ok: true, appended: data?.appended || 0 })
-    } catch (e: any) {
-      setSaveResult({ ok: false, error: e?.message || 'Failed to export' })
-    } finally {
-      setSaving(false)
     }
   }
 
@@ -252,69 +203,6 @@ export default function DrivePage() {
             </CardContent>
           </Card>
         )}
-
-        {/* Preview data and optional sheet creation (kept for convenience) */}
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Eye className="h-5 w-5" />
-              Preview Export Data
-            </CardTitle>
-            <CardDescription>See the data that would be written to your spreadsheet</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <Dialog open={showPreview} onOpenChange={setShowPreview}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" className="flex items-center gap-2">
-                    <Eye className="h-4 w-4" />
-                    Preview Data
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="!max-w-[90vw] max-h-[80vh] overflow-y-auto">
-                  <DialogHeader>
-                    <DialogTitle>Spreadsheet Preview</DialogTitle>
-                    <DialogDescription>Preview of the channel data that will be exported</DialogDescription>
-                  </DialogHeader>
-                  <div className="mt-4">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Channel</TableHead>
-                          <TableHead>Handle</TableHead>
-                          <TableHead>Subscriber Count</TableHead>
-                          <TableHead>Platform</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {channels.slice(0, 50).map((c: any, idx: number) => (
-                          <TableRow key={idx}>
-                            <TableCell className="font-medium">{c.title || c.channelName || '-'}</TableCell>
-                            <TableCell>{c.handle || '-'}</TableCell>
-                            <TableCell>{formatNumber(c.subscriberCount)}</TableCell>
-                            <TableCell className="text-sm text-muted-foreground">{c.platform || 'youtube'}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </DialogContent>
-              </Dialog>
-              {existingSheetId && (
-                <Button onClick={saveToSpreadsheet} disabled={saving}>
-                  {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {!saving && <Save className="h-4 w-4" />}
-                  Save to Spreadsheet
-                </Button>
-              )}
-            </div>
-            {saveResult && (
-              <div className={`text-sm ${saveResult.ok ? 'text-green-600' : 'text-red-600'}`}>
-                {saveResult.ok ? `Added ${saveResult.appended || 0} rows.` : saveResult.error}
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
     </div>
     </ProtectedRoute>

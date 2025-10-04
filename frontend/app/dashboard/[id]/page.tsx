@@ -1,9 +1,9 @@
 "use client"
 
 import React, { useEffect, useState } from "react"
-import { ArrowLeft, Users, Eye, MessageCircle, Heart, TrendingUp, Calendar, Play, ExternalLink, Clock } from 'lucide-react'
+import { ArrowLeft, Users, Eye, MessageCircle, Heart, TrendingUp, Calendar, Play, ExternalLink, Clock, Loader2, File } from 'lucide-react'
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute"
 
 
@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useToast } from "@/hooks/use-toast"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 
 
 function formatNumber(num: number) {
@@ -139,6 +141,10 @@ export default function ChannelDashboard() {
   const [special, setSpecial] = useState<any[]>([])
   const [recent, setRecent] = useState<any[]>([])
   const [criteria, setCriteria] = useState(getGlobalCriteria())
+  const [addingToSheet, setAddingToSheet] = useState(false)
+  const [showSheetDialog, setShowSheetDialog] = useState(false)
+  const { toast } = useToast()
+  const router = useRouter()
 
 
 
@@ -217,6 +223,52 @@ export default function ChannelDashboard() {
     </ProtectedRoute>
   )
 
+  async function addToSheet() {
+    if (!id || !channel) return;
+    setAddingToSheet(true);
+    try {
+      const res = await fetch('/api/drive/add-channel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelId: id })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const errorMsg = err?.error || 'Failed to add to sheet';
+        throw new Error(errorMsg);
+      }
+      const data = await res.json();
+      if (data.added) {
+        toast({
+          title: "Channel added to sheet",
+          description: `${channel.title} has been added to the spreadsheet.`
+        });
+      } else if (data.updated) {
+        toast({
+          title: "Channel updated in sheet",
+          description: `Subscribers for ${channel.title} have been updated.`
+        });
+      } else {
+        toast({
+          title: "Channel up to date",
+          description: data.message || "No changes needed."
+        });
+      }
+    } catch (e: any) {
+      const errorMsg = e?.message || "An unexpected error occurred.";
+      toast({
+        title: "Failed to update sheet",
+        description: errorMsg,
+        variant: "destructive"
+      });
+      if (errorMsg.includes('spreadsheetId not set')) {
+        setShowSheetDialog(true);
+      }
+    } finally {
+      setAddingToSheet(false);
+    }
+  }
+
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-background">
@@ -294,6 +346,28 @@ export default function ChannelDashboard() {
               </div>
             </CardContent>
           </Card>
+        </div>
+
+        {/* Add button after grid */}
+        <div className="flex gap-2 mt-4">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={addToSheet} 
+            disabled={addingToSheet}
+          >
+            {addingToSheet ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Adding...
+              </>
+            ) : (
+              <>
+                <File className="h-4 w-4 mr-2" />
+                Add to 10X10
+              </>
+            )}
+          </Button>
         </div>
 
         {/* Analytics Tabs */}
@@ -473,6 +547,20 @@ export default function ChannelDashboard() {
           </TabsContent>
         </Tabs>
       </div>
+      <AlertDialog open={showSheetDialog} onOpenChange={setShowSheetDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>No Spreadsheet Connected</AlertDialogTitle>
+            <AlertDialogDescription>
+              To add channels to a sheet, please set up a Google Spreadsheet connection in the Drive settings.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { router.push('/drive'); setShowSheetDialog(false); }}>Take Me to Setup</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
     </ProtectedRoute>
   )

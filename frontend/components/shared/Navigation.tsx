@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { User, TrendingUp, Network, Settings, Clock, Play, Users, LogOut, FolderOpen } from 'lucide-react'
+import { User, TrendingUp, Network, Settings, Clock, Play, Users, LogOut, FileSpreadsheet } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select"
 import { useJobs } from "@/hooks/useJobs"
@@ -86,7 +86,7 @@ export function Navigation() {
     { href: "/suggested-channels", label: "Suggested Channels", icon: Users },
     { href: "/top-performing", label: "Top Performing", icon: TrendingUp },
     { href: "/connections-graph", label: "Connections Graph", icon: Network },
-    { href: "/drive", label: "Drive", icon: FolderOpen },
+    { href: "/drive", label: "Sheets", icon: FileSpreadsheet },
     { href: "/criteria", label: "Criteria", icon: Settings },
     // Note: Schedule tab is not currently in use; keeping code for potential future re-enable
     // { href: "/schedule", label: "Schedule", icon: Clock },

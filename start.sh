@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Unset NODE_ENV to allow Next.js to set it appropriately for dev mode
+unset NODE_ENV
+
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "[start] Project root: $ROOT_DIR"

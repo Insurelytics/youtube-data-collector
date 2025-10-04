@@ -7,14 +7,23 @@
  * @param {number} commentWeight - Weight for comments (default: 500)
  * @returns {number} Engagement score
  */
-export function calculateEngagementScore(video, likeWeight = 150, commentWeight = 500) {
+export function calculateEngagementScore(video, likeWeight = 150, commentWeight = 500, { includeDuration = true, includeLikesComments = true } = {}) {
     const views = Number(video.viewCount || 0);
     const likes = Number(video.likeCount || 0);
     const comments = Number(video.commentCount || 0);
     const duration = Number(video.durationSeconds || 0);
     
-    // Normalize views by duration (views per minute) + weighted likes and comments
-    return views * (duration / 60.0) + likeWeight * likes + commentWeight * comments;
+    // Build score based on toggles
+    let score = 0;
+    if (includeDuration) {
+        score += views * (duration / 60.0);
+    } else {
+        score += views; // plain views
+    }
+    if (includeLikesComments) {
+        score += likeWeight * likes + commentWeight * comments;
+    }
+    return score;
 }
 
 /**
@@ -23,6 +32,13 @@ export function calculateEngagementScore(video, likeWeight = 150, commentWeight 
  * @param {number} commentWeight - Weight for comments (default: 500)
  * @returns {string} SQL expression for engagement calculation
  */
-export function getEngagementSqlExpression(likeWeight = 150, commentWeight = 500) {
-    return `COALESCE(viewCount,0) * (COALESCE(durationSeconds,0) / 60.0) + ${likeWeight}*COALESCE(likeCount,0) + ${commentWeight}*COALESCE(commentCount,0)`;
+export function getEngagementSqlExpression(likeWeight = 150, commentWeight = 500, { includeDuration = true, includeLikesComments = true } = {}) {
+    const viewTerm = includeDuration
+        ? 'COALESCE(viewCount,0) * (COALESCE(durationSeconds,0) / 60.0)'
+        : 'COALESCE(viewCount,0)';
+    const parts = [viewTerm];
+    if (includeLikesComments) {
+        parts.push(`${likeWeight}*COALESCE(likeCount,0) + ${commentWeight}*COALESCE(commentCount,0)`);
+    }
+    return parts.join(' + ');
 }

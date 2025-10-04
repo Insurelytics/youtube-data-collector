@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { MessageCircle, Heart, Settings, Clock } from 'lucide-react'
+import { MessageCircle, Heart, Settings, Clock, Plus, Edit2, Trash2, Save } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -9,15 +9,72 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
  
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { CriteriaEditor } from "./CriteriaEditor"
+
+type CriteriaPreset = {
+  id: string
+  name: string
+  viralMultiplier: number
+  commentWeight: number
+  likeWeight: number
+  timeRange: string
+  viralMethod: string
+  hideCta: boolean
+  includeDurationInEngagement: boolean
+  includeLikesCommentsInEngagement: boolean
+}
+
+function getDefaultPresets(): CriteriaPreset[] {
+  return [
+    {
+      id: 'default',
+      name: 'Default',
+      viralMultiplier: 5,
+      commentWeight: 25,
+      likeWeight: 10,
+      timeRange: '120',
+      viralMethod: 'subscribers',
+      hideCta: true,
+      includeDurationInEngagement: false,
+      includeLikesCommentsInEngagement: false
+    },
+    {
+      id: 'avg-view-based',
+      name: 'Average View Based',
+      viralMultiplier: 5,
+      commentWeight: 25,
+      likeWeight: 10,
+      timeRange: '120',
+      viralMethod: 'avgViews',
+      hideCta: true,
+      includeDurationInEngagement: false,
+      includeLikesCommentsInEngagement: false
+    },
+    {
+      id: 'advanced-engagement',
+      name: 'Advanced Engagement',
+      viralMultiplier: 5,
+      commentWeight: 25,
+      likeWeight: 10,
+      timeRange: '120',
+      viralMethod: 'subscribers',
+      hideCta: true,
+      includeDurationInEngagement: true,
+      includeLikesCommentsInEngagement: true
+    }
+  ]
+}
 
 function getGlobalCriteria() {
   return {
     viralMultiplier: 5,
-    commentWeight: 500,
-    likeWeight: 150,
+    commentWeight: 25,
+    likeWeight: 10,
     timeRange: '',
     viralMethod: 'subscribers',
-    hideCta: false
+    hideCta: true,
+    includeDurationInEngagement: false,
+    includeLikesCommentsInEngagement: false
   }
 }
 
@@ -28,39 +85,112 @@ function formatNumber(num: number) {
 }
 
 export function CriteriaPage() {
-  const [criteria, setCriteria] = useState(getGlobalCriteria())
+  const initialCriteria = getGlobalCriteria();
+  const [presets, setPresets] = useState<CriteriaPreset[]>(getDefaultPresets());
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('default');
+  const [criteria, setCriteria] = useState(initialCriteria);
+  const [commentWeightStr, setCommentWeightStr] = useState(initialCriteria.commentWeight.toString());
+  const [likeWeightStr, setLikeWeightStr] = useState(initialCriteria.likeWeight.toString());
+  const [newPresetName, setNewPresetName] = useState('');
+  const [showNewPresetInput, setShowNewPresetInput] = useState(false);
+  const [saveToPresetId, setSaveToPresetId] = useState<string>('');
+  const [showEditor, setShowEditor] = useState(false);
+  const [editorMode, setEditorMode] = useState<"create" | "edit" | null>(null);
+  const [editorInitialName, setEditorInitialName] = useState<string>("");
 
   useEffect(() => {
-    // Load client-side to avoid hydration mismatch
+    // Load presets and selected preset
     try {
-      const stored = typeof window !== 'undefined' ? localStorage.getItem('youtube-global-criteria') : null
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        setCriteria(prev => ({ ...prev, ...parsed }))
+      const storedPresets = typeof window !== 'undefined' ? localStorage.getItem('youtube-criteria-presets') : null
+      if (storedPresets) {
+        setPresets(JSON.parse(storedPresets))
+      } else {
+        // Save default presets
+        const defaults = getDefaultPresets()
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('youtube-criteria-presets', JSON.stringify(defaults))
+        }
+      }
+
+      const storedSelectedId = typeof window !== 'undefined' ? localStorage.getItem('youtube-selected-preset-id') : null
+      const storedCriteria = typeof window !== 'undefined' ? localStorage.getItem('youtube-global-criteria') : null
+      
+      if (storedCriteria) {
+        const parsed = JSON.parse(storedCriteria)
+        setCriteria(parsed)
+        if (storedSelectedId) {
+          setSelectedPresetId(storedSelectedId)
+        }
       } else {
         // Default to 120 days on first load
-        const initial = { ...criteria, timeRange: '120', viralMethod: 'subscribers', hideCta: false }
-        setCriteria(initial)
+        const defaults = getDefaultPresets()
+        const defaultPreset = defaults[0]
+        setCriteria(defaultPreset)
         if (typeof window !== 'undefined') {
-          localStorage.setItem('youtube-global-criteria', JSON.stringify(initial))
+          localStorage.setItem('youtube-global-criteria', JSON.stringify(defaultPreset))
+          localStorage.setItem('youtube-selected-preset-id', 'default')
         }
         fetch('/api/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ settings: { globalCriteria: initial } })
+          body: JSON.stringify({ settings: { globalCriteria: defaultPreset } })
         }).catch(() => {})
       }
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    setCommentWeightStr(criteria.commentWeight.toString());
+    setLikeWeightStr(criteria.likeWeight.toString());
+  }, [criteria.commentWeight, criteria.likeWeight]);
+
+  const handlePresetChange = (presetId: string) => {
+    const preset = presets.find(p => p.id === presetId)
+    if (!preset) return
+
+    const newCriteria = {
+      viralMultiplier: preset.viralMultiplier,
+      commentWeight: preset.commentWeight,
+      likeWeight: preset.likeWeight,
+      timeRange: preset.timeRange,
+      viralMethod: preset.viralMethod,
+      hideCta: preset.hideCta,
+      includeDurationInEngagement: preset.includeDurationInEngagement,
+      includeLikesCommentsInEngagement: preset.includeLikesCommentsInEngagement
+    }
+
+    setCriteria(newCriteria)
+    setSelectedPresetId(presetId)
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('youtube-global-criteria', JSON.stringify(newCriteria))
+      localStorage.setItem('youtube-selected-preset-id', presetId)
+    }
+
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { globalCriteria: newCriteria } })
+    }).catch(err => console.warn('Failed to save criteria to database:', err))
+  }
+
   const handleCriteriaChange = (field: string, value: any) => {
     const newCriteria = { ...criteria, [field]: value }
     setCriteria(newCriteria)
     
+    // Update the current preset with new values
+    const updatedPresets = presets.map(p => 
+      p.id === selectedPresetId 
+        ? { ...p, [field]: value }
+        : p
+    )
+    setPresets(updatedPresets)
+
     // Store in both localStorage (for immediate frontend use) and database (for backend use)
     if (typeof window !== 'undefined') {
       localStorage.setItem('youtube-global-criteria', JSON.stringify(newCriteria))
+      localStorage.setItem('youtube-criteria-presets', JSON.stringify(updatedPresets))
     }
     
     // Save to database for backend access
@@ -75,162 +205,176 @@ export function CriteriaPage() {
     }).catch(err => console.warn('Failed to save criteria to database:', err))
   }
 
+  const savePreset = (targetPresetId?: string) => {
+    if (!targetPresetId && !newPresetName.trim()) return
+
+    let updatedPresets: CriteriaPreset[]
+    let finalSelectedId: string
+
+    if (targetPresetId) {
+      // Overwrite existing preset
+      updatedPresets = presets.map(p => 
+        p.id === targetPresetId 
+          ? { ...p, ...criteria }
+          : p
+      )
+      finalSelectedId = targetPresetId
+    } else {
+      // Create new preset
+      const trimmedName = newPresetName.trim()
+      
+      // Check for duplicate names
+      const existingPreset = presets.find(p => p.name.toLowerCase() === trimmedName.toLowerCase())
+      if (existingPreset) {
+        alert(`A preset named "${existingPreset.name}" already exists. Please choose a different name.`)
+        return
+      }
+
+      const newPreset: CriteriaPreset = {
+        id: `preset-${Date.now()}`,
+        name: trimmedName,
+        ...criteria
+      }
+
+      updatedPresets = [...presets, newPreset]
+      finalSelectedId = newPreset.id
+      setSelectedPresetId(newPreset.id)
+    }
+
+    setPresets(updatedPresets)
+    setNewPresetName('')
+    setShowNewPresetInput(false)
+    setSaveToPresetId('')
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('youtube-criteria-presets', JSON.stringify(updatedPresets))
+      localStorage.setItem('youtube-selected-preset-id', finalSelectedId)
+    }
+  }
+
   return (
     <div className="space-y-6">
+      {/* Preset Selector Card */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
-            Global Analytics Criteria
+            Criteria Presets
           </CardTitle>
           <CardDescription>
-            Set global criteria for viral video detection and engagement scoring across all channels
+            Select a preset or create your own custom criteria configuration
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid gap-6 md:grid-cols-3">
-            {/* Viral Video Criteria */}
-            <Card className="p-4">
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                  <h3 className="font-semibold">Viral Video Threshold</h3>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="viral-multiplier">
-                    Viral Multiplier
-                  </Label>
-                  <div className="flex items-center gap-3">
-                    <Input
-                      id="viral-multiplier"
-                      type="number"
-                      min="1"
-                      max="100"
-                      step="0.5"
-                      value={criteria.viralMultiplier}
-                      onChange={(e) => handleCriteriaChange('viralMultiplier', parseFloat(e.target.value) || 5)}
-                      className="w-20"
-                    />
-                    <span className="text-sm text-muted-foreground">x</span>
-                  </div>
-                  <div className="space-y-2" style={{ maxWidth: 300 }}>
-                    <Label htmlFor="viral-method">Viral Threshold Based On</Label>
-                    <Select
-                      value={criteria.viralMethod || 'subscribers'}
-                      onValueChange={(value) => handleCriteriaChange('viralMethod', value)}
-                    >
-                      <SelectTrigger id="viral-method" className="w-full">
-                        <SelectValue placeholder="Select method" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="subscribers">Channel subscribers/followers</SelectItem>
-                        <SelectItem value="avgViews">Average views</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                <div className="flex items-center justify-between pt-2">
-                  <div className="flex flex-col gap-0.5">
-                    <Label htmlFor="hide-cta">Hide CTA-bait videos globally</Label>
-                    <span className="text-xs text-muted-foreground">Filter videos where comments look like mass call-to-action responses</span>
-                  </div>
-                  <Switch id="hide-cta" checked={!!criteria.hideCta} onCheckedChange={(val) => handleCriteriaChange('hideCta', !!val)} />
-                </div>
-                  <p className="text-xs text-muted-foreground">
-                    Videos need {criteria.viralMultiplier}x+ more views than {criteria.viralMethod === 'avgViews' ? 'average views' : 'subscriber count'} to be considered viral
-                  </p>
-                </div>
-              </div>
-            </Card>
-
-            {/* Engagement Weights */}
-            <Card className="p-4">
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                  <h3 className="font-semibold">Engagement Weights</h3>
-                </div>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="comment-weight" className="flex items-center gap-2">
-                      <MessageCircle className="h-3 w-3" />
-                      Comment Weight
-                    </Label>
-                    <div className="flex items-center gap-3">
-                      <Input
-                        id="comment-weight"
-                        type="number"
-                        min="0"
-                        max="10000"
-                        step="10"
-                        value={criteria.commentWeight}
-                        onChange={(e) => handleCriteriaChange('commentWeight', parseFloat(e.target.value) || 500)}
-                        className="w-20"
-                      />
-                      <span className="text-sm text-muted-foreground">
-                        points per comment
-                      </span>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="like-weight" className="flex items-center gap-2">
-                      <Heart className="h-3 w-3" />
-                      Like Weight
-                    </Label>
-                    <div className="flex items-center gap-3">
-                      <Input
-                        id="like-weight"
-                        type="number"
-                        min="0"
-                        max="10000"
-                        step="10"
-                        value={criteria.likeWeight}
-                        onChange={(e) => handleCriteriaChange('likeWeight', parseFloat(e.target.value) || 150)}
-                        className="w-20"
-                      />
-                      <span className="text-sm text-muted-foreground">
-                        points per like
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </Card>
-
-            {/* Time Range */}
-            <Card className="p-4">
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                  <h3 className="font-semibold">Time Range</h3>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="time-range" className="flex items-center gap-2">
-                    <Clock className="h-3 w-3" />
-                    Analysis Period
-                  </Label>
-                  <div className="flex items-center gap-3">
-                    <Input
-                      id="time-range"
-                      type="number"
-                      min="1"
-                      max="36500"
-                      step="1"
-                      value={criteria.timeRange || ''}
-                      onChange={(e) => handleCriteriaChange('timeRange', e.target.value)}
-                      className="w-28"
-                    />
-                    <span className="text-sm text-muted-foreground">days</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Analysis includes videos from the last {criteria.timeRange ? `${criteria.timeRange} days` : 'selected period'}
-                  </p>
-                </div>
-              </div>
-            </Card>
+        <CardContent>
+          <div className="flex gap-2 items-end">
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="preset-select">Active Preset</Label>
+              <Select value={selectedPresetId} onValueChange={handlePresetChange}>
+                <SelectTrigger id="preset-select">
+                  <SelectValue placeholder="Select a preset" />
+                </SelectTrigger>
+                <SelectContent>
+                  {presets.map(preset => (
+                    <SelectItem key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+                        <Button 
+              variant="outline"
+              onClick={() => {
+                const name = typeof window !== 'undefined' ? prompt('New preset name') : ''
+                const trimmed = (name || '').trim()
+                if (!trimmed) return
+                const duplicate = presets.find(p => p.name.toLowerCase() === trimmed.toLowerCase())
+                if (duplicate) {
+                  alert(`A preset named "${duplicate.name}" already exists. Please choose a different name.`)
+                  return
+                }
+                const defaults = getDefaultPresets()
+                const base = defaults.find(p => p.id === 'default') || defaults[0]
+                const newPreset = {
+                  id: `preset-${Date.now()}`,
+                  name: trimmed,
+                  viralMultiplier: base.viralMultiplier,
+                  commentWeight: base.commentWeight,
+                  likeWeight: base.likeWeight,
+                  timeRange: base.timeRange,
+                  viralMethod: base.viralMethod,
+                  hideCta: base.hideCta,
+                  includeDurationInEngagement: base.includeDurationInEngagement,
+                  includeLikesCommentsInEngagement: base.includeLikesCommentsInEngagement
+                }
+                const updated = [...presets, newPreset]
+                setPresets(updated)
+                setSelectedPresetId(newPreset.id)
+                const newCriteria = {
+                  viralMultiplier: newPreset.viralMultiplier,
+                  commentWeight: newPreset.commentWeight,
+                  likeWeight: newPreset.likeWeight,
+                  timeRange: newPreset.timeRange,
+                  viralMethod: newPreset.viralMethod,
+                  hideCta: newPreset.hideCta,
+                  includeDurationInEngagement: newPreset.includeDurationInEngagement,
+                  includeLikesCommentsInEngagement: newPreset.includeLikesCommentsInEngagement
+                }
+                setCriteria(newCriteria)
+                if (typeof window !== 'undefined') {
+                  localStorage.setItem('youtube-criteria-presets', JSON.stringify(updated))
+                  localStorage.setItem('youtube-selected-preset-id', newPreset.id)
+                  localStorage.setItem('youtube-global-criteria', JSON.stringify(newCriteria))
+                }
+                fetch('/api/settings', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ settings: { globalCriteria: newCriteria } })
+                }).catch(() => {})
+                setEditorMode('edit')
+                setEditorInitialName('')
+                setShowEditor(true)
+              }}
+              title="Create new preset"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Create new
+            </Button>
+            {presets.find(p => p.id === selectedPresetId)?.name.toLowerCase() !== 'default' && (
+              <Button 
+                variant="outline"
+                onClick={() => {
+                  setEditorMode('edit')
+                  setEditorInitialName('')
+                  setShowEditor(true)
+                }}
+                title="Edit selected preset"
+              >
+                <Edit2 className="h-4 w-4 mr-2" />
+                Edit preset
+              </Button>
+            )}
           </div>
+        </CardContent>
+      </Card>
 
-          {/* Preview Section */}
+      {showEditor && editorMode && (
+        <CriteriaEditor
+          presets={presets}
+          setPresets={setPresets}
+          selectedPresetId={selectedPresetId}
+          setSelectedPresetId={setSelectedPresetId}
+          criteria={criteria}
+          setCriteria={setCriteria}
+          handleCriteriaChange={handleCriteriaChange}
+          savePreset={savePreset}
+          getDefaultPresets={getDefaultPresets}
+          onClose={() => setShowEditor(false)}
+          mode={editorMode}
+          initialNewName={editorInitialName}
+        />
+      )}
+
           <Card className="bg-muted/50">
             <CardHeader>
               <CardTitle className="text-lg">Preview</CardTitle>
@@ -250,38 +394,42 @@ export function CriteriaPage() {
                 <div className="space-y-2">
                   <h4 className="font-medium text-sm">Engagement Score Example</h4>
                   <p className="text-sm text-muted-foreground">
-                    1K views + 100 comments + 50 likes = 
-                    <strong> {formatNumber(1000 + (100 * criteria.commentWeight) + (50 * criteria.likeWeight))}</strong> points
+                    {(() => {
+                      const sampleViews = 1000;
+                      const sampleComments = 100;
+                      const sampleLikes = 50;
+                      const sampleSeconds = 30; // 30s reel
+                      const minutes = sampleSeconds / 60;
+                      let score = 0;
+                      if (criteria.includeDurationInEngagement) {
+                        score += sampleViews * minutes;
+                      } else {
+                        score += sampleViews;
+                      }
+                      if (criteria.includeLikesCommentsInEngagement) {
+                        score += (sampleComments * criteria.commentWeight) + (sampleLikes * criteria.likeWeight);
+                      }
+                      return `1K views${criteria.includeDurationInEngagement ? ` on a ${minutes} min reel` : ''}${criteria.includeLikesCommentsInEngagement ? ` + ${sampleComments} comments + ${sampleLikes} likes` : ''} = `;
+                    })()} 
+                    <strong>{(() => {
+                      const sampleViews = 1000;
+                      const sampleComments = 100;
+                      const sampleLikes = 50;
+                      const sampleSeconds = 30;
+                      const minutes = sampleSeconds / 60;
+                      let score = criteria.includeDurationInEngagement ? sampleViews * minutes : sampleViews;
+                      if (criteria.includeLikesCommentsInEngagement) score += (sampleComments * criteria.commentWeight) + (sampleLikes * criteria.likeWeight);
+                      // formatNumber expects integers; keep simple for display
+                      return formatNumber(score);
+                    })()}</strong> points
                   </p>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Reset Button */}
-          <div className="flex justify-end">
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                const defaultCriteria = { viralMultiplier: 5, commentWeight: 500, likeWeight: 150, timeRange: '120', viralMethod: 'subscribers', hideCta: false }
-                setCriteria(defaultCriteria)
-                if (typeof window !== 'undefined') {
-                  localStorage.setItem('youtube-global-criteria', JSON.stringify(defaultCriteria))
-                }
-                // Save to database
-                fetch('/api/settings', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    settings: {
-                      globalCriteria: defaultCriteria
-                    }
-                  })
-                }).catch(err => console.warn('Failed to save default criteria to database:', err))
-              }}
-            >
-              Reset to Defaults
-            </Button>
+                  <div className="space-y-2">
+              <h4 className="font-medium text-sm">Time Range</h4>
+              <p className="text-sm text-muted-foreground">
+                Analysis period: <strong>{criteria.timeRange ? `${criteria.timeRange} days` : 'not set'}</strong>
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>

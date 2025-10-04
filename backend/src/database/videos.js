@@ -177,7 +177,7 @@ export function queryVideos({ search, sort, order, page, pageSize }) {
   return { total, rows };
 }
 
-export function queryVideosAdvanced({ sinceIso, channelId, sort, order, page, pageSize, likeWeight = 150, commentWeight = 500, excludeCta = false }) {
+export function queryVideosAdvanced({ sinceIso, channelId, sort, order, page, pageSize, likeWeight = 150, commentWeight = 500, excludeCta = false, includeDuration = true, includeLikesComments = true }) {
   const db = getDatabase();
   const clauses = [];
   const params = {};
@@ -186,7 +186,7 @@ export function queryVideosAdvanced({ sinceIso, channelId, sort, order, page, pa
   if (excludeCta) { clauses.push('COALESCE(hasCallToAction,0) = 0'); }
   const whereSql = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   const orderSql = order?.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
-  const engagement = getEngagementSqlExpression(likeWeight, commentWeight);
+  const engagement = getEngagementSqlExpression(likeWeight, commentWeight, { includeDuration, includeLikesComments });
   let sortExpr = 'publishedAt';
   if (sort === 'engagement') sortExpr = engagement;
   if (sort === 'views') sortExpr = 'viewCount';
@@ -206,10 +206,10 @@ export function queryVideosAdvanced({ sinceIso, channelId, sort, order, page, pa
   return { total, rows };
 }
 
-export function getTopVideos({ channelId, sinceIso, likeWeight = 150, commentWeight = 500, excludeCta = false }) {
+export function getTopVideos({ channelId, sinceIso, likeWeight = 150, commentWeight = 500, excludeCta = false, includeDuration = true, includeLikesComments = true }) {
   const db = getDatabase();
   const where = `WHERE channelId = :channelId AND publishedAt >= :sinceIso${excludeCta ? ' AND COALESCE(hasCallToAction,0) = 0' : ''}`;
-  const engagement = getEngagementSqlExpression(likeWeight, commentWeight);
+  const engagement = getEngagementSqlExpression(likeWeight, commentWeight, { includeDuration, includeLikesComments });
   const views = db.prepare(`
     SELECT id, title, viewCount, likeCount, commentCount, publishedAt, thumbnails, 
            platform, shortCode, displayUrl, localImageUrl, hasCallToAction, ${engagement} AS engagement

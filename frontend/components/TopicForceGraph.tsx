@@ -13,6 +13,8 @@ import { VideoSheetButton } from "@/components/VideoSheetButton"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { VideoCard } from "./VideoCard"
+import { getPostUrl } from "@/lib/video-utils"
 
 type Topic = {
   id: number
@@ -689,62 +691,6 @@ export default function TopicForceGraph({
     return `M ${a.x} ${a.y} Q ${mx + nx} ${my + ny} ${b.x} ${b.y}`
   }
 
-  const formatNumber = (num: number) => {
-    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
-    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`
-    return num.toString()
-  }
-
-  const getVideoUrl = (video: Video) => {
-    if (video.platform === 'instagram') {
-      // For Instagram, always use the public reel link instead of rotating video URLs
-      // Extract shortCode from the id (remove 'ig_' prefix) or use shortCode field if available
-      const shortCode = video.shortCode || (video.id.startsWith('ig_') ? video.id.substring(3) : video.id)
-      return `https://www.instagram.com/p/${shortCode}/`
-    }
-    if (video.platform === 'youtube') return `https://www.youtube.com/watch?v=${video.id}`
-    if (video.videoUrl) return video.videoUrl
-    return null
-  }
-
-  const getImageUrl = (video: Video) => {
-    // For Instagram reels, prioritize locally downloaded image to avoid CORS issues
-    if (video.platform === 'instagram' && video.localImageUrl) {
-      // Extract filename from localImageUrl (could be full path or just filename)
-      const filename = video.localImageUrl.includes('/') 
-        ? video.localImageUrl.split('/').pop() 
-        : video.localImageUrl
-      return `/api/images/${filename}`
-    }
-    
-    // For YouTube videos, use thumbnails with the correct structure
-    if (video.thumbnails) {
-      try {
-        const t = typeof video.thumbnails === 'string' ? JSON.parse(video.thumbnails) : video.thumbnails
-        const thumbnailUrl = t?.medium?.url || t?.default?.url || t?.high?.url
-        if (thumbnailUrl) return thumbnailUrl
-      } catch {
-        // If parsing fails, fallback to placeholder
-      }
-    }
-    
-    return '/placeholder-video.jpg'
-  }
-
-  const handleVideoClick = (video: Video) => {
-    const url = getVideoUrl(video)
-    if (url) {
-      window.open(url, '_blank', 'noopener,noreferrer')
-    }
-  }
-
-  const handleChannelClick = (video: Video, event: React.MouseEvent) => {
-    event.stopPropagation() // Prevent video click
-    if (video.channelId) {
-      router.push(`/dashboard/${video.channelId}`)
-    }
-  }
-
   async function addToSheet(video: Video) {
     if (!video.channelId) {
       toast({ title: "Error", description: "Missing channel information", variant: "destructive" });
@@ -752,7 +698,7 @@ export default function TopicForceGraph({
     }
     setAddingVideoId(video.id)
     try {
-      const videoLink = getVideoUrl(video)
+      const videoLink = getPostUrl(video)
       const res = await fetch('/api/drive/add-reel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -812,7 +758,7 @@ export default function TopicForceGraph({
         title: "Channel added to 10X10",
         description: `${pendingVideo.channelTitle || 'Channel'} has been added to the spreadsheet`
       })
-      const videoLink = getVideoUrl(pendingVideo)
+      const videoLink = getPostUrl(pendingVideo)
       const reelRes = await fetch('/api/drive/add-reel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1148,82 +1094,17 @@ export default function TopicForceGraph({
                 <span className="ml-2">Loading videos...</span>
               </div>
             ) : selectedTopicVideos.length > 0 ? (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div className="space-y-4">
                 {selectedTopicVideos.map((video) => (
-                  <div
+                  <VideoCard
                     key={video.id}
-                    className="group p-4 border rounded-lg hover:shadow-md transition-all hover:border-blue-300"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className={`bg-gray-100 rounded overflow-hidden flex-shrink-0 ${
-                        video.platform === 'instagram' ? 'w-14 h-20' : 'w-20 h-14'
-                      }`}>
-                        <img 
-                          src={getImageUrl(video)} 
-                          alt={video.title}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.currentTarget.src = '/placeholder-video.jpg'
-                          }}
-                        />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 
-                          onClick={() => handleVideoClick(video)}
-                          className="font-medium text-sm line-clamp-2 group-hover:text-blue-600 cursor-pointer hover:underline"
-                        >
-                          {video.title}
-                          {video.hasCallToAction ? (
-                            <Badge variant="destructive" className="ml-2">CTA</Badge>
-                          ) : null}
-                        </h4>
-                        {video.channelTitle && (
-                          <div 
-                            onClick={(e) => handleChannelClick(video, e)}
-                            className="flex items-center gap-1 mt-1 text-xs text-muted-foreground hover:text-blue-600 cursor-pointer hover:underline w-fit"
-                          >
-                            <User className="h-3 w-3" />
-                            <span className="truncate">{video.channelTitle}</span>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                          <div className="flex items-center gap-1">
-                            <Eye className="h-3 w-3" />
-                            {formatNumber(video.viewCount || 0)}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Heart className="h-3 w-3" />
-                            {formatNumber(video.likeCount || 0)}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <MessageCircle className="h-3 w-3" />
-                            {formatNumber(video.commentCount || 0)}
-                          </div>
-                        </div>
-                        <div className="flex justify-end mt-1">
-                          <VideoSheetButton 
-                            video={video} 
-                            isAdded={addedVideos.has(video.id)} 
-                            isLoading={addingVideoId === video.id} 
-                            onAdd={() => addToSheet(video)} 
-                            sheetUrl={sheetUrl} 
-                            className="text-sm" 
-                          />
-                        </div>
-                        <div className="flex items-center justify-between mt-2">
-                          <Badge variant="outline" className="text-xs">
-                            {video.platform === 'youtube' ? 'YouTube' : 'Instagram'}
-                          </Badge>
-                          <div 
-                            onClick={() => handleVideoClick(video)}
-                            className="cursor-pointer hover:text-blue-600"
-                          >
-                            <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-blue-600" />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                    video={video}
+                    variant="large"
+                    isAdded={addedVideos.has(video.id)}
+                    isLoading={addingVideoId === video.id}
+                    onAdd={() => addToSheet(video)}
+                    sheetUrl={sheetUrl}
+                  />
                 ))}
               </div>
             ) : (

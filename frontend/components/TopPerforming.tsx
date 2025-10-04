@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Grid3X3, Flame, ChevronDown, Eye, MessageCircle, Heart, LinkIcon, HelpCircle, ExternalLink, Loader2, File } from "lucide-react"
+import { Grid3X3, Flame, ChevronDown, LinkIcon, HelpCircle, Video } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,7 +15,8 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle 
 } from "@/components/ui/alert-dialog"
-import { VideoSheetButton } from "./VideoSheetButton"
+import { VideoCard } from "./VideoCard"
+import { getPostUrl, formatNumber } from "@/lib/video-utils"
 
 // Type definitions
 type Topic = {
@@ -110,12 +111,6 @@ export default function TopPerforming() {
     fetchTopicGraph()
   }, [maxNodes])
 
-  const formatNumber = (num: number) => {
-    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
-    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`
-    return num.toString()
-  }
-
   const formatMultiplier = (multiplier: number) => {
     return `${multiplier.toFixed(1)}x`
   }
@@ -183,26 +178,6 @@ export default function TopPerforming() {
     return "text-red-600"
   }
 
-  const getVideoUrl = (video: any) => {
-    if (video.videoUrl) return video.videoUrl
-    if (video.platform === 'youtube') return `https://www.youtube.com/watch?v=${video.id}`
-    if (video.platform === 'instagram') {
-      const identifier = video.shortCode || video.id
-      return `https://www.instagram.com/p/${identifier}/`
-    }
-    return `https://www.youtube.com/watch?v=${video.id || 'dQw4w9WgXcQ'}`
-  }
-
-  const handleVideoClick = (video: any) => {
-    const videoUrl = getVideoUrl(video)
-    window.open(videoUrl, '_blank', 'noopener,noreferrer')
-  }
-
-  const CtaBadge = ({ video }: { video: any }) => {
-    if (!video?.hasCallToAction) return null;
-    return <Badge variant="destructive" className="ml-2">CTA</Badge>;
-  };
-
   async function addToSheet(video: any) {
     if (!video.channelId) {
       toast({ title: "Error", description: "Missing channel information", variant: "destructive" });
@@ -210,7 +185,7 @@ export default function TopPerforming() {
     }
     setAddingVideoId(video.id)
     try {
-      const videoLink = getVideoUrl(video)
+      const videoLink = getPostUrl(video)
       const res = await fetch('/api/drive/add-reel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -270,7 +245,7 @@ export default function TopPerforming() {
         title: "Channel added to 10X10",
         description: `${pendingVideo.channelTitle} has been added to the spreadsheet`
       })
-      const videoLink = getVideoUrl(pendingVideo)
+      const videoLink = getPostUrl(pendingVideo)
       const reelRes = await fetch('/api/drive/add-reel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -493,7 +468,7 @@ export default function TopPerforming() {
                               <CollapsibleTrigger asChild>
                                 <Button variant="outline" size="sm" className="w-full justify-between bg-transparent">
                                   <div className="flex items-center gap-2">
-                                    <Eye className="h-3 w-3" />
+                                    <Video className="h-3 w-3" />
                                     Top 3 Videos
                                   </div>
                                   <ChevronDown className="h-3 w-3" />
@@ -501,40 +476,15 @@ export default function TopPerforming() {
                               </CollapsibleTrigger>
                               <CollapsibleContent className="space-y-2 mt-2">
                                 {topic.topVideos.map((video, index) => (
-                                  <div 
-                                    key={index} 
-                                    onClick={() => handleVideoClick(video)}
-                                    className="p-2 bg-muted/30 rounded text-xs cursor-pointer hover:bg-muted/50 transition-colors group"
-                                  >
-                                    <div className="flex items-start justify-between mb-1">
-                                      <div className="font-medium line-clamp-2 group-hover:text-blue-600 flex-1 pr-2">{video.title}<CtaBadge video={video} /></div>
-                                      <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-blue-600 flex-shrink-0" />
-                                    </div>
-                                    <div className="flex items-center gap-3 text-muted-foreground">
-                                      <div className="flex items-center gap-1">
-                                        <Eye className="h-2 w-2" />
-                                        {formatNumber(video.views)}
-                                      </div>
-                                      <div className="flex items-center gap-1">
-                                        <MessageCircle className="h-2 w-2" />
-                                        {formatNumber(video.comments)}
-                                      </div>
-                                      <div className="flex items-center gap-1">
-                                        <Heart className="h-2 w-2" />
-                                        {formatNumber(video.likes)}
-                                      </div>
-                                    </div>
-                                    <div className="flex justify-end mt-1">
-                                      <VideoSheetButton 
-                                        video={video} 
-                                        isAdded={addedVideos.has(video.id)} 
-                                        isLoading={addingVideoId === video.id} 
-                                        onAdd={(e) => { e?.stopPropagation(); addToSheet(video); }} 
-                                        sheetUrl={sheetUrl} 
-                                        className="mt-1 text-xs h-5 px-2" 
-                                      />
-                                    </div>
-                                  </div>
+                                  <VideoCard
+                                    key={index}
+                                    video={video}
+                                    variant="compact"
+                                    isAdded={addedVideos.has(video.id)}
+                                    isLoading={addingVideoId === video.id}
+                                    onAdd={() => addToSheet(video)}
+                                    sheetUrl={sheetUrl}
+                                  />
                                 ))}
                               </CollapsibleContent>
                             </Collapsible>
@@ -640,7 +590,7 @@ export default function TopPerforming() {
                           <CollapsibleTrigger asChild>
                             <Button variant="outline" size="sm" className="w-full justify-between bg-transparent">
                               <div className="flex items-center gap-2">
-                                <Eye className="h-3 w-3" />
+                                <Video className="h-3 w-3" />
                                 Top 3 Videos
                               </div>
                               <ChevronDown className="h-3 w-3" />
@@ -648,40 +598,15 @@ export default function TopPerforming() {
                           </CollapsibleTrigger>
                           <CollapsibleContent className="space-y-2 mt-2">
                             {topic.topVideos.map((video, index) => (
-                              <div 
-                                key={index} 
-                                onClick={() => handleVideoClick(video)}
-                                className="p-2 bg-muted/30 rounded text-xs cursor-pointer hover:bg-muted/50 transition-colors group"
-                              >
-                                <div className="flex items-start justify-between mb-1">
-                                  <div className="font-medium line-clamp-2 group-hover:text-blue-600 flex-1 pr-2">{video.title}<CtaBadge video={video} /></div>
-                                  <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-blue-600 flex-shrink-0" />
-                                </div>
-                                <div className="flex items-center gap-3 text-muted-foreground">
-                                  <div className="flex items-center gap-1">
-                                    <Eye className="h-2 w-2" />
-                                    {formatNumber(video.views)}
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    <MessageCircle className="h-2 w-2" />
-                                    {formatNumber(video.comments)}
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    <Heart className="h-2 w-2" />
-                                    {formatNumber(video.likes)}
-                                  </div>
-                                </div>
-                                <div className="flex justify-end mt-1">
-                                  <VideoSheetButton 
-                                    video={video} 
-                                    isAdded={addedVideos.has(video.id)} 
-                                    isLoading={addingVideoId === video.id} 
-                                    onAdd={(e) => { e?.stopPropagation(); addToSheet(video); }} 
-                                    sheetUrl={sheetUrl} 
-                                    className="mt-1 text-xs h-5 px-2" 
-                                  />
-                                </div>
-                              </div>
+                              <VideoCard
+                                key={index}
+                                video={video}
+                                variant="compact"
+                                isAdded={addedVideos.has(video.id)}
+                                isLoading={addingVideoId === video.id}
+                                onAdd={() => addToSheet(video)}
+                                sheetUrl={sheetUrl}
+                              />
                             ))}
                           </CollapsibleContent>
                         </Collapsible>

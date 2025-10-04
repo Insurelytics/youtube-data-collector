@@ -505,7 +505,18 @@ async function createServer() {
         : (() => { try { const gc = getSetting('globalCriteria'); if (gc) return !!JSON.parse(gc)?.hideCta; } catch {}; return false; })();
       const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
       const trends = getChannelTrends({ channelId, sinceIso });
-      const top = getTopVideos({ channelId, sinceIso, likeWeight, commentWeight, excludeCta });
+      // Read engagement toggles (default false)
+      let includeDurationInEngagement = false;
+      let includeLikesCommentsInEngagement = false;
+      try {
+        const gc = getSetting('globalCriteria');
+        if (gc) {
+          const parsed = JSON.parse(gc);
+          includeDurationInEngagement = !!parsed?.includeDurationInEngagement;
+          includeLikesCommentsInEngagement = !!parsed?.includeLikesCommentsInEngagement;
+        }
+      } catch {}
+      const top = getTopVideos({ channelId, sinceIso, likeWeight, commentWeight, excludeCta, includeDuration: includeDurationInEngagement, includeLikesComments: includeLikesCommentsInEngagement });
       const special = getSpecialVideos({ channelId, avgViews: ch.avgViews, subscriberCount: ch.subscriberCount, viralMethod, sinceIso, viralMultiplier, excludeCta });
       res.json({ channel: ch, trends, top, special });
     } catch (e) {
@@ -526,7 +537,18 @@ async function createServer() {
     const excludeCta = (req.query.hideCta != null)
       ? (req.query.hideCta === '1' || req.query.hideCta === 'true')
       : (() => { try { const gc = getSetting('globalCriteria'); if (gc) return !!JSON.parse(gc)?.hideCta; } catch {}; return false; })();
-    const { rows, total } = queryVideosAdvanced({ sinceIso, channelId, sort: 'engagement', order, page, pageSize, likeWeight, commentWeight, excludeCta });
+    // Engagement toggles
+    let includeDurationInEngagement = false;
+    let includeLikesCommentsInEngagement = false;
+    try {
+      const gc = getSetting('globalCriteria');
+      if (gc) {
+        const parsed = JSON.parse(gc);
+        includeDurationInEngagement = !!parsed?.includeDurationInEngagement;
+        includeLikesCommentsInEngagement = !!parsed?.includeLikesCommentsInEngagement;
+      }
+    } catch {}
+    const { rows, total } = queryVideosAdvanced({ sinceIso, channelId, sort: 'engagement', order, page, pageSize, likeWeight, commentWeight, excludeCta, includeDuration: includeDurationInEngagement, includeLikesComments: includeLikesCommentsInEngagement });
     res.json({ total, page, pageSize, rows });
   });
 

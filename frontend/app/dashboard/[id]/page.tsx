@@ -1,108 +1,21 @@
 "use client"
 
 import React, { useEffect, useState } from "react"
-import { ArrowLeft, Users, Eye, MessageCircle, Heart, TrendingUp, Calendar, Play, Clock, File, Loader2, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Users, Eye, Calendar, Play, Clock } from 'lucide-react'
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute"
-
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
-import { VideoSheetButton } from "@/components/VideoSheetButton"
-
-
-function formatNumber(num: number) {
-  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
-  if (num >= 1000) return `${(num / 1000).toFixed(1)}K`
-  return num.toString()
-}
-
-function formatViewCount(video: any) {
-  return formatNumber(video.viewCount || 0)
-}
-
-function formatDate(dateString: string) {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric'
-  })
-}
-
-function thumbUrlFrom(thumbnails: any): string {
-  try {
-    const t = typeof thumbnails === 'string' ? JSON.parse(thumbnails) : thumbnails
-    return t?.medium?.url || t?.default?.url || t?.high?.url || ""
-  } catch {
-    return ""
-  }
-}
-
-function getImageUrl(video: any): string {
-  // For Instagram reels, prioritize locally downloaded image to avoid CORS issues
-  if (video.platform === 'instagram' && video.localImageUrl) {
-    return video.localImageUrl
-  }
-  
-  const thumbnailUrl = thumbUrlFrom(video.thumbnails)
-  if (thumbnailUrl) return thumbnailUrl
-  
-  return "/placeholder.svg"
-}
-
-function getImageClasses(video: any, size: 'small' | 'medium' | 'large' = 'medium'): string {
-  const baseClasses = "object-cover rounded"
-  
-  if (video.platform === 'instagram') {
-    // Instagram images are 9:16 (portrait) - keep consistent height, adjust width to be narrower
-    switch (size) {
-      case 'small':
-        return `w-4 h-7 ${baseClasses}` // Narrower for 9:16 aspect ratio
-      case 'medium':
-        return `w-5 h-9 ${baseClasses}` // 5:9 ratio preserves Instagram proportions  
-      case 'large':
-        return `w-8 h-14 ${baseClasses}` // 8:14 ≈ 4:7 keeps portrait feel but reasonable width
-    }
-  } else {
-    // YouTube images are 16:9 (landscape) - keep existing widths
-    switch (size) {
-      case 'small':
-        return `w-12 h-7 ${baseClasses}` // 12:7 ≈ 16:9.3 ratio
-      case 'medium':
-        return `w-16 h-9 ${baseClasses}` // 16:9 ratio
-      case 'large':
-        return `w-24 h-14 ${baseClasses}` // 24:14 ≈ 12:7 ≈ 16:9.3 ratio
-    }
-  }
-}
-
-function getPostUrl(video: any): string {
-  if (video.platform === 'instagram') {
-    return `https://www.instagram.com/p/${video.shortCode}/`
-  }
-  return `https://www.youtube.com/watch?v=${video.id}`
-}
-
-function cleanTitle(title: string): string {
-  if (!title) return title
-  // Remove hashtags from title for display
-  return title.replace(/#\w+/g, '').replace(/\s+/g, ' ').trim()
-}
-
-function CtaBadge({ video }: { video: any }) {
-  if (!video?.hasCallToAction) return null
-  return (
-    <Badge variant="destructive" className="ml-2">CTA</Badge>
-  )
-}
+import { VideoCard } from "@/components/VideoCard"
+import { formatNumber, formatDate, getPostUrl } from "@/lib/video-utils"
 
 // Time range options with their corresponding days
 const TIME_RANGES = [
@@ -442,52 +355,16 @@ export default function ChannelDashboard() {
               <CardContent>
                 <div className="space-y-4">
                   {top.views.map((video, index) => (
-                    <div key={video.id} className="flex items-center gap-4 p-4 border rounded-lg">
-                      <div className="flex items-center justify-center w-8 h-8 bg-primary text-primary-foreground rounded-full text-sm font-bold">
-                        {index + 1}
-                      </div>
-                      <div 
-                        className="flex-1 cursor-pointer" 
-                        onClick={() => window.open(getPostUrl(video), '_blank', 'noopener,noreferrer')}
-                      >
-                        <img 
-                          src={getImageUrl(video)}
-                          alt={video.title}
-                          className={getImageClasses(video, 'large')}
-                        />
-                        <h3 className="font-semibold line-clamp-2 mt-2">
-                          <span className="hover:underline block">
-                            {cleanTitle(video.title)}
-                          </span>
-                          <CtaBadge video={video} />
-                        </h3>
-                        <p className="text-sm text-muted-foreground">{formatDate(video.publishedAt)}</p>
-                        <div className="flex items-center gap-4 text-sm mt-2">
-                          <div className="flex items-center gap-1">
-                            <Eye className="h-3 w-3" />
-                            {formatViewCount(video)}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <MessageCircle className="h-3 w-3" />
-                            {formatNumber(video.commentCount || 0)}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Heart className="h-3 w-3" />
-                            {formatNumber(video.likeCount || 0)}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <VideoSheetButton 
-                          video={video} 
-                          isAdded={addedVideos.has(video.id)} 
-                          isLoading={addingVideoId === video.id} 
-                          onAdd={() => addToSheet(video)} 
-                          sheetUrl={sheetUrl} 
-                          className="mt-2" 
-                        />
-                      </div>
-                    </div>
+                    <VideoCard
+                      key={video.id}
+                      video={video}
+                      variant="large"
+                      rank={index + 1}
+                      isAdded={addedVideos.has(video.id)}
+                      isLoading={addingVideoId === video.id}
+                      onAdd={() => addToSheet(video)}
+                      sheetUrl={sheetUrl}
+                    />
                   ))}
                 </div>
               </CardContent>
@@ -503,55 +380,16 @@ export default function ChannelDashboard() {
               <CardContent>
                 <div className="space-y-4">
                   {special.map((video, index) => (
-                    <div key={video.id} className="flex items-center gap-4 p-4 border rounded-lg bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-950/20 dark:to-red-950/20">
-                      <div className="flex items-center justify-center w-8 h-8 bg-orange-500 text-white rounded-full text-sm font-bold">
-                        🔥
-                      </div>
-                      <div 
-                        className="flex-1 cursor-pointer" 
-                        onClick={() => window.open(getPostUrl(video), '_blank', 'noopener,noreferrer')}
-                      >
-                        <img 
-                          src={getImageUrl(video)}
-                          alt={video.title}
-                          className={getImageClasses(video, 'large')}
-                        />
-                        <h3 className="font-semibold line-clamp-2 mt-2">
-                          <span className="hover:underline block">
-                            {cleanTitle(video.title)}
-                          </span>
-                          <CtaBadge video={video} />
-                        </h3>
-                        <p className="text-sm text-muted-foreground">{formatDate(video.publishedAt)}</p>
-                        <Badge variant="destructive" className="mt-1">
-                          {criteria.viralMultiplier}x+ {criteria.viralMethod === 'avgViews' ? 'average views' : 'subscribers'} multiplier
-                        </Badge>
-                        <div className="flex items-center gap-4 text-sm mt-2">
-                          <div className="flex items-center gap-1">
-                            <Eye className="h-3 w-3" />
-                            {formatViewCount(video)}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <MessageCircle className="h-3 w-3" />
-                            {formatNumber(video.commentCount || 0)}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Heart className="h-3 w-3" />
-                            {formatNumber(video.likeCount || 0)}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <VideoSheetButton 
-                          video={video} 
-                          isAdded={addedVideos.has(video.id)} 
-                          isLoading={addingVideoId === video.id} 
-                          onAdd={() => addToSheet(video)} 
-                          sheetUrl={sheetUrl} 
-                          className="mt-2" 
-                        />
-                      </div>
-                    </div>
+                    <VideoCard
+                      key={video.id}
+                      video={video}
+                      variant="large"
+                      isViral={true}
+                      isAdded={addedVideos.has(video.id)}
+                      isLoading={addingVideoId === video.id}
+                      onAdd={() => addToSheet(video)}
+                      sheetUrl={sheetUrl}
+                    />
                   ))}
                 </div>
               </CardContent>
@@ -578,42 +416,15 @@ export default function ChannelDashboard() {
                   </TableHeader>
                   <TableBody>
                     {recent.map((video) => (
-                      <TableRow key={video.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <a href={getPostUrl(video)} target="_blank" rel="noopener noreferrer">
-                              <img 
-                                src={getImageUrl(video)}
-                                alt={video.title}
-                                className={getImageClasses(video, 'medium')}
-                              />
-                            </a>
-                            <div>
-                              <p className="font-medium line-clamp-2 max-w-xs">
-                                <a href={getPostUrl(video)} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                                  {cleanTitle(video.title)}
-                                </a>
-                                <CtaBadge video={video} />
-                              </p>
-                              <p className="text-sm text-muted-foreground">{video.durationSeconds ? `${Math.round(video.durationSeconds/60)}m` : ''}</p>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>{formatDate(video.publishedAt)}</TableCell>
-                        <TableCell>{formatViewCount(video)}</TableCell>
-                        <TableCell>{formatNumber(video.commentCount || 0)}</TableCell>
-                        <TableCell>{formatNumber(video.likeCount || 0)}</TableCell>
-                        <TableCell className="w-32">  {/* Add width to accommodate text */}
-                          <VideoSheetButton 
-                            video={video} 
-                            isAdded={addedVideos.has(video.id)} 
-                            isLoading={addingVideoId === video.id} 
-                            onAdd={() => addToSheet(video)} 
-                            sheetUrl={sheetUrl} 
-                            className="" 
-                          />
-                        </TableCell>
-                      </TableRow>
+                      <VideoCard
+                        key={video.id}
+                        video={video}
+                        variant="table-row"
+                        isAdded={addedVideos.has(video.id)}
+                        isLoading={addingVideoId === video.id}
+                        onAdd={() => addToSheet(video)}
+                        sheetUrl={sheetUrl}
+                      />
                     ))}
                   </TableBody>
                 </Table>

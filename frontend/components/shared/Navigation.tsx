@@ -69,6 +69,19 @@ export function Navigation() {
       return
     }
     if (id === 'none') {
+      try {
+        if (typeof window !== 'undefined') {
+          const stored = localStorage.getItem('youtube-global-criteria')
+          if (stored) {
+            await fetch('/api/settings', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ settings: { globalCriteria: JSON.parse(stored) } })
+            }).catch(() => {})
+          }
+        }
+      } catch {}
       document.cookie = `workspaceId=; Path=/; Max-Age=0`
       setCurrentWorkspace(null)
       router.push('/no-workspace')
@@ -78,6 +91,19 @@ export function Navigation() {
     // select existing
     document.cookie = `workspaceId=${encodeURIComponent(id)}; Path=/`;
     setCurrentWorkspace(id);
+    try {
+      if (typeof window !== 'undefined') {
+        const stored = localStorage.getItem('youtube-global-criteria')
+        if (stored) {
+          await fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ settings: { globalCriteria: JSON.parse(stored) } })
+          }).catch(() => {})
+        }
+      }
+    } catch {}
     window.location.href = '/';
   }
 

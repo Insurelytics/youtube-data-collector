@@ -720,4 +720,158 @@ export function registerDriveRoutes(app, { getWorkspace, updateWorkspaceSpreadsh
       res.status(500).json({ error: e?.message || 'Failed to update drive folder id' });
     }
   });
+
+  app.post('/api/drive/add-reel', async (req, res) => {
+    try {
+      const { channelId, videoLink, viewCount } = req.body || {};
+      if (!channelId) return res.status(400).json({ error: 'channelId required' });
+      if (!videoLink) return res.status(400).json({ error: 'videoLink required' });
+
+      const ws = getWorkspace(req.workspaceId);
+      const spreadsheetId = ws && ws.spreadsheetId ? String(ws.spreadsheetId) : '';
+      if (!spreadsheetId) return res.status(400).json({ error: 'spreadsheetId not set for workspace' });
+
+      const sheets = await getAuthenticatedSheetsClient();
+      const channel = getChannel(channelId);
+      if (!channel) return res.status(404).json({ error: 'Channel not found' });
+
+      const handle = (channel.handle || '').toString().replace(/^@+/, '');
+      let igLink = '';
+      if (handle) {
+        if ((channel.platform || '').toLowerCase() === 'instagram') {
+          igLink = `https://www.instagram.com/${handle}`;
+        } else {
+          igLink = `https://www.youtube.com/@${handle}`;
+        }
+      }
+
+      // Find channel in first sheet by matching IG handle
+      const getRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'A1:E1000' });
+      const values = getRes?.data?.values || [];
+      let channelRowIndex = -1;
+      const igLinkLower = igLink.trim().toLowerCase();
+      
+      for (let i = 1; i < values.length; i++) {
+        const row = values[i];
+        const link = (row[2] || '').toString().trim().toLowerCase();
+        if (link === igLinkLower) {
+          channelRowIndex = i;
+          break;
+        }
+      }
+
+      if (channelRowIndex === -1) {
+        return res.status(404).json({ error: 'Channel not found in spreadsheet. Please add the channel first.' });
+      }
+
+      // Get all sheets to find the target sheet by index
+      const meta = await sheets.spreadsheets.get({ spreadsheetId, includeGridData: false });
+      const sheetsList = (meta?.data?.sheets || []);
+      
+      // Row index to sheet index mapping: row 2 (index 1) -> sheet index 1, etc.
+      const targetSheetIndex = channelRowIndex;
+      if (targetSheetIndex >= sheetsList.length) {
+        return res.status(404).json({ error: 'Reels sheet not found for this channel' });
+      }
+
+      const targetSheet = sheetsList[targetSheetIndex];
+      const sheetTitle = targetSheet?.properties?.title;
+      if (!sheetTitle) {
+        return res.status(404).json({ error: 'Invalid reels sheet' });
+      }
+
+      let normalizedLink = videoLink.toString().trim();
+      if (normalizedLink.endsWith('/')) {
+        normalizedLink = normalizedLink.slice(0, -1);
+      }
+
+      // Add reel to the sheet
+      const views = formatFollowers(typeof viewCount === 'number' ? viewCount : null);
+      const row = [normalizedLink, views, '', ''];
+
+      // Prevent duplicates: check if videoLink already exists in column A
+      const videoLinkLower = normalizedLink.toLowerCase();
+      const existingReelsRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${sheetTitle}!A1:B10000` });
+      const reelValues = existingReelsRes?.data?.values || [];
+      let existingRowIndex = -1;
+      for (let i = 1; i < reelValues.length; i++) {
+        const r = reelValues[i];
+        let existingLink = (r?.[0] || '').toString().trim();
+        if (existingLink.endsWith('/')) {
+          existingLink = existingLink.slice(0, -1);
+        }
+        const link = existingLink.toLowerCase();
+        if (link === videoLinkLower) { existingRowIndex = i; break; }
+      }
+      if (existingRowIndex !== -1) {
+        const currentRow = reelValues[existingRowIndex] || [];
+        const currentViews = (currentRow[1] || '').toString().trim();
+        if (currentViews !== views) {
+          const rowNum = existingRowIndex + 1;
+          await sheets.spreadsheets.values.update({
+            spreadsheetId,
+            range: `${sheetTitle}!B${rowNum}`,
+            valueInputOption: 'USER_ENTERED',
+            requestBody: { values: [[views]] }
+          });
+          return res.json({ ok: true, updated: true, viewsUpdated: true, sheetTitle });
+        }
+        return res.json({ ok: true, added: false, message: 'Reel already exists with current views', sheetTitle });
+      }
+      
+      const appendRes = await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `${sheetTitle}!A1`,
+        valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: { values: [row] }
+      });
+
+      // Reset styling: remove background color, text color, and bold from the newly added row
+      try {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const updatedRange = appendRes?.data?.updates?.updatedRange;
+        if (typeof updatedRange === 'string') {
+          const m = updatedRange.match(/^([^!]+)!([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+          if (m) {
+            const startRow = Math.max(0, parseInt(m[3], 10) - 1);
+            const endRow = Math.max(startRow + 1, parseInt(m[5], 10));
+            const sheetId = targetSheet?.properties?.sheetId;
+            if (sheetId != null) {
+              await sheets.spreadsheets.batchUpdate({
+                spreadsheetId,
+                requestBody: {
+                  requests: [
+                    {
+                      repeatCell: {
+                        range: {
+                          sheetId,
+                          startRowIndex: startRow,
+                          endRowIndex: endRow,
+                          startColumnIndex: 0,
+                          endColumnIndex: 4,
+                        },
+                        cell: { userEnteredFormat: {
+                          backgroundColor: { red: 1, green: 1, blue: 1 },
+                          textFormat: { foregroundColor: { red: 0, green: 0, blue: 0 }, bold: false },
+                          wrapStrategy: 'WRAP'
+                        } },
+                        fields: 'userEnteredFormat(backgroundColor,textFormat,wrapStrategy)'
+                      }
+                    }
+                  ]
+                }
+              });
+            }
+          }
+        }
+      } catch (_) {
+        // ignore formatting errors
+      }
+
+      res.json({ ok: true, added: true, sheetTitle });
+    } catch (e) {
+      res.status(500).json({ error: e?.message || 'Failed to add reel to spreadsheet' });
+    }
+  });
 }

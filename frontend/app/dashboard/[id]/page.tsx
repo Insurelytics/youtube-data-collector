@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useEffect, useState } from "react"
-import { ArrowLeft, Users, Eye, MessageCircle, Heart, TrendingUp, Calendar, Play, Clock } from 'lucide-react'
+import { ArrowLeft, Users, Eye, MessageCircle, Heart, TrendingUp, Calendar, Play, Clock, File, Loader2 } from 'lucide-react'
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute"
@@ -142,7 +142,9 @@ export default function ChannelDashboard() {
   const [recent, setRecent] = useState<any[]>([])
   const [criteria, setCriteria] = useState(getGlobalCriteria())
   const { toast } = useToast()
-
+  const [addingVideoId, setAddingVideoId] = useState<string | null>(null)
+  const [showAddChannelDialog, setShowAddChannelDialog] = useState(false)
+  const [pendingVideo, setPendingVideo] = useState<any | null>(null)
 
 
   // Update criteria when global criteria changes or on focus
@@ -168,6 +170,106 @@ export default function ChannelDashboard() {
     const base = criteria.viralMethod === 'avgViews' ? Number(channel.avgViews) : Number(channel.subscriberCount)
     const viewCount = Number(video.viewCount || 0)
     return base > 0 && viewCount >= base * criteria.viralMultiplier
+  }
+
+  async function addToSheet(video: any) {
+    if (!channel) return
+    setAddingVideoId(video.id)
+    try {
+      const videoLink = getPostUrl(video)
+      const res = await fetch('/api/drive/add-reel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channelId: channel.id,
+          videoLink,
+          viewCount: video.viewCount || 0
+        })
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        const errorMsg = err?.error || 'Failed to add to sheet'
+        
+        // Check if channel needs to be added first
+        if (errorMsg.includes('Channel not found in spreadsheet')) {
+          setPendingVideo(video)
+          setShowAddChannelDialog(true)
+          return
+        }
+        
+        throw new Error(errorMsg)
+      }
+      const data = await res.json()
+      toast({
+        title: data?.updated || data?.viewsUpdated ? "Video updated in 10X10" : (data?.added ? "Video added to 10X10" : "Video already in 10X10"),
+        description: data?.sheetTitle ? `Target: ${data.sheetTitle}` : (data?.message || undefined)
+      })
+    } catch (e: any) {
+      toast({
+        title: "Failed to add video",
+        description: e?.message || "An unexpected error occurred.",
+        variant: "destructive"
+      })
+    } finally {
+      setAddingVideoId(null)
+    }
+  }
+
+  async function addChannelThenReel() {
+    if (!channel || !pendingVideo) return
+    setShowAddChannelDialog(false)
+    setAddingVideoId(pendingVideo.id)
+    
+    try {
+      // First add the channel
+      const channelRes = await fetch('/api/drive/add-channel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelId: channel.id })
+      })
+      
+      if (!channelRes.ok) {
+        const err = await channelRes.json().catch(() => ({}))
+        throw new Error(err?.error || 'Failed to add channel')
+      }
+      
+      toast({
+        title: "Channel added to 10X10",
+        description: `${channel.title} has been added to the spreadsheet`
+      })
+      
+      // Then add the reel
+      const videoLink = getPostUrl(pendingVideo)
+      const reelRes = await fetch('/api/drive/add-reel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channelId: channel.id,
+          videoLink,
+          viewCount: pendingVideo.viewCount || 0
+        })
+      })
+      
+      if (!reelRes.ok) {
+        const err = await reelRes.json().catch(() => ({}))
+        throw new Error(err?.error || 'Failed to add reel')
+      }
+      
+      const data = await reelRes.json()
+      toast({
+        title: data?.updated || data?.viewsUpdated ? "Video updated in 10X10" : (data?.added ? "Video added to 10X10" : "Video already in 10X10"),
+        description: data?.sheetTitle ? `Target: ${data.sheetTitle}` : (data?.message || undefined)
+      })
+    } catch (e: any) {
+      toast({
+        title: "Failed to add video",
+        description: e?.message || "An unexpected error occurred.",
+        variant: "destructive"
+      })
+    } finally {
+      setAddingVideoId(null)
+      setPendingVideo(null)
+    }
   }
 
   useEffect(() => {
@@ -360,6 +462,21 @@ export default function ChannelDashboard() {
                             {formatNumber(video.likeCount || 0)}
                           </div>
                         </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="mt-2"
+                          title="Add to 10X10"
+                          disabled={addingVideoId === video.id}
+                          onClick={() => addToSheet(video)}
+                        >
+                          {addingVideoId === video.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                          ) : (
+                            <File className="h-3 w-3 mr-1" />
+                          )}
+                          Add to 10X10
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -415,6 +532,21 @@ export default function ChannelDashboard() {
                             {formatNumber(video.likeCount || 0)}
                           </div>
                         </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="mt-2"
+                          title="Add to 10X10"
+                          disabled={addingVideoId === video.id}
+                          onClick={() => addToSheet(video)}
+                        >
+                          {addingVideoId === video.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                          ) : (
+                            <File className="h-3 w-3 mr-1" />
+                          )}
+                          Add to 10X10
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -438,6 +570,7 @@ export default function ChannelDashboard() {
                       <TableHead>Views</TableHead>
                       <TableHead>Comments</TableHead>
                       <TableHead>Likes</TableHead>
+                      <TableHead></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -467,6 +600,21 @@ export default function ChannelDashboard() {
                         <TableCell>{formatViewCount(video)}</TableCell>
                         <TableCell>{formatNumber(video.commentCount || 0)}</TableCell>
                         <TableCell>{formatNumber(video.likeCount || 0)}</TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Add to 10X10"
+                            disabled={addingVideoId === video.id}
+                            onClick={() => addToSheet(video)}
+                          >
+                            {addingVideoId === video.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <File className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -476,6 +624,21 @@ export default function ChannelDashboard() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <AlertDialog open={showAddChannelDialog} onOpenChange={setShowAddChannelDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Add Channel to 10X10?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {channel?.title} isn't in your 10X10 spreadsheet yet. Would you like to add it first and then add this video?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setPendingVideo(null); setAddingVideoId(null); }}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={addChannelThenReel}>Add Channel and Video</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
     </ProtectedRoute>
   )

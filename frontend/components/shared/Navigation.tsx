@@ -78,7 +78,7 @@ export function Navigation() {
     // select existing
     document.cookie = `workspaceId=${encodeURIComponent(id)}; Path=/`;
     setCurrentWorkspace(id);
-    router.push('/');
+    window.location.href = '/';
   }
 
   const navItems = [

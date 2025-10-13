@@ -159,7 +159,16 @@ async function downloadAudioDirect(videoUrl, videoId, platform) {
       }
     }
 
-    const ytdlpCommand = `yt-dlp -J "${effectiveUrl}"`;
+    // Mirror proxy and header behavior used for full video downloads to reduce IG blocks
+    const apifyProxyPassword = process.env.APIFY_PROXY_PASSWORD;
+    const instagramProxyArg = (platform === 'instagram' && apifyProxyPassword)
+      ? ` --proxy "http://groups-RESIDENTIAL:${apifyProxyPassword}@proxy.apify.com:8000"`
+      : '';
+    const headerArgs = (platform === 'instagram')
+      ? ' --add-header "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" --add-header "Referer: https://www.instagram.com/"'
+      : '';
+
+    const ytdlpCommand = `yt-dlp -J "${effectiveUrl}"${instagramProxyArg}${headerArgs}`;
     const { stdout } = await execAsync(ytdlpCommand);
     const info = JSON.parse(stdout);
     const formats = Array.isArray(info?.formats) ? info.formats : [];

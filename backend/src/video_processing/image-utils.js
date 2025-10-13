@@ -35,10 +35,20 @@ export async function downloadImage(imageUrl, videoId) {
   try {
     if (!imageUrl || !imageUrl.includes('instagram')) return null;
     
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Referer': 'https://www.instagram.com/'
+    };
+
+    const proxyPassword = process.env.APIFY_PROXY_PASSWORD;
+    const agent = proxyPassword
+      ? new (await import('https-proxy-agent')).HttpsProxyAgent(`http://groups-RESIDENTIAL:${proxyPassword}@proxy.apify.com:8000`)
+      : undefined;
+
     const response = await fetch(imageUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      }
+      headers,
+      // Pass proxy agent if configured
+      agent
     });
 
     if (!response.ok) {
@@ -71,10 +81,19 @@ export async function downloadChannelThumbnail(thumbnailUrl, channelId) {
   try {
     if (!thumbnailUrl) return null;
     
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Referer': 'https://www.instagram.com/'
+    };
+
+    const proxyPassword = process.env.APIFY_PROXY_PASSWORD;
+    const agent = proxyPassword
+      ? new (await import('https-proxy-agent')).HttpsProxyAgent(`http://groups-RESIDENTIAL:${proxyPassword}@proxy.apify.com:8000`)
+      : undefined;
+
     const response = await fetch(thumbnailUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      }
+      headers,
+      agent
     });
 
     if (!response.ok) {

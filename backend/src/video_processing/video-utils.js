@@ -32,55 +32,16 @@ const AUDIO_DIR = path.join(__dirname, '../../temp/audio');
  * @returns {string} - Path to the extracted audio file
  */
 export async function downloadAndExtractAudio(videoUrl, videoId, platform) {
-  let videoPath = null;
-  let audioPath = null;
-  
   try {
-    console.log(`Starting video download and audio extraction for ${videoId} from ${platform}...`);
-    
-    // Download video
-    videoPath = await downloadVideo(videoUrl, videoId, platform);
-    if (!videoPath) {
-      throw new Error('Failed to download video');
+    console.log(`Starting audio-only download for ${videoId} from ${platform}...`);
+    const audioPath = await downloadAudioDirect(videoUrl, videoId, platform);
+    if (!audioPath) {
+      throw new Error('Failed to download audio');
     }
-    
-    // Extract original audio (keep it persistent)
-    try {
-      audioPath = await extractAudio(videoPath, videoId, 'original');
-    } catch (audioError) {
-      // Clean up video file
-      if (videoPath && fs.existsSync(videoPath)) {
-        // fs.unlinkSync(videoPath);
-        console.log(`Cleaned up video file: ${videoPath}`);
-      }
-      
-      // If the error is about no audio streams, throw a more specific error
-      if (audioError.message.includes('No audio streams found')) {
-        throw new Error('Video has no audio stream');
-      }
-      throw audioError;
-    }
-    
-    // Clean up video file to save space, keep audio
-    if (videoPath && fs.existsSync(videoPath)) {
-      fs.unlinkSync(videoPath);
-      console.log(`Cleaned up video file: ${videoPath}`);
-    }
-    
-    console.log(`Audio extraction completed for ${videoId}: ${audioPath}`);
+    console.log(`Audio download completed for ${videoId}: ${audioPath}`);
     return audioPath;
-    
   } catch (error) {
-    console.error(`Error downloading and extracting audio for ${videoId}:`, error);
-    
-    // Clean up on error
-    if (videoPath && fs.existsSync(videoPath)) {
-      fs.unlinkSync(videoPath);
-    }
-    if (audioPath && fs.existsSync(audioPath)) {
-      fs.unlinkSync(audioPath);
-    }
-    
+    console.error(`Error downloading audio for ${videoId}:`, error);
     throw error;
   }
 }
@@ -118,31 +79,12 @@ export async function transcribeStoredAudio(audioPath, videoId) {
  * @deprecated Use downloadAndExtractAudio and transcribeStoredAudio separately
  */
 export async function processVideo(videoUrl, videoId, platform) {
-  let videoPath = null;
-  let audioPath = null;
-  
   try {
-    console.log(`Starting video processing for ${videoId} from ${platform}...`);
-    
-    // Download video
-    videoPath = await downloadVideo(videoUrl, videoId, platform);
-    if (!videoPath) {
-      throw new Error('Failed to download video');
-    }
-    
-    // Extract original audio
-    audioPath = await extractAudio(videoPath, videoId, 'original');
-    
+    console.log(`Starting audio-only processing for ${videoId} from ${platform}...`);
+    const audioPath = await downloadAudioDirect(videoUrl, videoId, platform);
     return audioPath;
-    
   } catch (error) {
-    console.error(`Error processing video ${videoId}:`, error);
-    if (videoPath) {
-      fs.unlinkSync(videoPath);
-    }
-    if (audioPath) {
-      fs.unlinkSync(audioPath);
-    }
+    console.error(`Error processing audio ${videoId}:`, error);
     throw error;
   }
 }
@@ -170,11 +112,16 @@ async function downloadVideo(videoUrl, videoId, platform) {
     const videoPath = path.join(VIDEOS_DIR, `${videoId}.%(ext)s`);
     
     let command;
+    const apifyProxyPassword = process.env.APIFY_PROXY_PASSWORD;
+    const instagramProxyArg = (platform === 'instagram' && apifyProxyPassword)
+      ? ` --proxy "http://groups-RESIDENTIAL:${apifyProxyPassword}@proxy.apify.com:8000"`
+      : '';
     if (platform === 'youtube') {
       // Let yt-dlp choose the best format automatically
       command = `yt-dlp -o "${videoPath}" "${videoUrl}"`;
     } else if (platform === 'instagram') {
-      command = `yt-dlp -f best -o "${videoPath}" "${videoUrl}"`;
+      const headerArgs = ' --add-header "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" --add-header "Referer: https://www.instagram.com/"';
+      command = `yt-dlp -o "${videoPath}"${instagramProxyArg}${headerArgs} "${videoUrl}"`;
     } else {
       throw new Error(`Unsupported platform: ${platform}`);
     }
@@ -194,6 +141,46 @@ async function downloadVideo(videoUrl, videoId, platform) {
     
   } catch (error) {
     console.error(`Error downloading video ${videoId}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Downloads audio directly (no video) using yt-dlp -J and curl
+ */
+async function downloadAudioDirect(videoUrl, videoId, platform) {
+  try {
+    // Use a single working path: Instagram post URL (not direct media, not forcing proxy/headers)
+    let effectiveUrl = videoUrl;
+    if (platform === 'instagram') {
+      const shortCode = String(videoId || '').replace(/^ig_/, '');
+      if (shortCode) {
+        effectiveUrl = `https://www.instagram.com/reel/${shortCode}/`;
+      }
+    }
+
+    const ytdlpCommand = `yt-dlp -J "${effectiveUrl}"`;
+    const { stdout } = await execAsync(ytdlpCommand);
+    const info = JSON.parse(stdout);
+    const formats = Array.isArray(info?.formats) ? info.formats : [];
+    const audioFormat = formats.find(f => f && f.vcodec === 'none' && f.url);
+    if (!audioFormat) {
+      throw new Error('Audio-only format not found');
+    }
+
+    const ext = audioFormat.ext || 'm4a';
+    // Ensure audio directory exists at write time (defensive against external cleanup)
+    if (!fs.existsSync(AUDIO_DIR)) {
+      fs.mkdirSync(AUDIO_DIR, { recursive: true });
+    }
+    const outPath = path.join(AUDIO_DIR, `${videoId}.${ext}`);
+
+    const curlCommand = `curl -L --fail --compressed -o "${outPath}" "${audioFormat.url}"`;
+    await execAsync(curlCommand);
+    console.log(`Audio downloaded: ${outPath}`);
+    return outPath;
+  } catch (error) {
+    console.error(`Error downloading audio directly for ${videoId}:`, error);
     return null;
   }
 }

@@ -56,6 +56,8 @@ export async function performInitialScraping(videos, platform, progressCallback 
       
       // Update database with audio path
       updateAudioProcessingStatus(video.id, audioPath, 'audio_ready');
+      // Keep path in memory for immediate transcription phase
+      video.audioPath = audioPath;
       console.log(`Audio processing completed for ${video.id}: ${audioPath}`);
       
       videosProcessed++;
@@ -78,11 +80,10 @@ export async function performInitialScraping(videos, platform, progressCallback 
   if (videosForTranscription.length > 0) {
     // Prepare audio items for batch processing
     const audioItems = [];
-    const audioDir = path.join(__dirname, '../../temp/audio');
     
     for (const video of videosForTranscription) {
-      const audioPath = path.join(audioDir, `${video.id}_original.wav`);
-      if (fs.existsSync(audioPath)) {
+      const audioPath = video.audioPath;
+      if (audioPath && fs.existsSync(audioPath)) {
         audioItems.push({ audioPath, videoId: video.id });
       } else {
         console.warn(`Audio file not found for ${video.id}, skipping transcription`);

@@ -14,6 +14,14 @@ FROM node:20-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
+# Runtime dependencies for media processing and downloads
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        curl \
+        yt-dlp \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy built node_modules and source
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/src ./src

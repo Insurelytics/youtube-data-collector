@@ -19,8 +19,14 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ffmpeg \
         curl \
-        yt-dlp \
+        ca-certificates \
+        python3 \
     && rm -rf /var/lib/apt/lists/*
+
+# Install latest yt-dlp standalone binary (avoids outdated apt and pip issues)
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
+      -o /usr/local/bin/yt-dlp \
+    && chmod a+rx /usr/local/bin/yt-dlp
 
 # Copy built node_modules and source
 COPY --from=builder /app/node_modules ./node_modules

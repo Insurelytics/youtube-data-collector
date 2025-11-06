@@ -135,17 +135,15 @@ class QueueManager {
 
             console.log(`Job ${job.id} completed successfully. Synced ${content.length} items for ${channelTitle}`);
             
-            // STEP 4: Suggest channels based on topic analysis (final step)
-            if (topicsInferred > 0) {
-                this.updateJobProgress(job.id, 'Suggesting similar channels');
-                try {
-                    console.log('Running channel suggestions after initial scrape...');
-                    const suggestionResult = await suggestChannels();
-                    console.log(`Channel suggestions completed: Found ${suggestionResult.totalFoundUrls} URLs, stored ${suggestionResult.totalStoredChannels} new channels`);
-                } catch (error) {
-                    console.error('Channel suggestions failed:', error.message);
-                    // Don't fail the entire job if suggestions fail
-                }
+            // STEP 4: Suggest similar channels (AI, inline after scrape)
+            this.updateJobProgress(job.id, 'Suggesting similar channels');
+            try {
+                console.log('Running AI channel suggestions after scrape...');
+                const suggestionResult = await suggestChannels(channelId);
+                console.log(`AI suggestions done: total ${suggestionResult.totalFoundUrls}, stored ${suggestionResult.totalStoredChannels}, duplicates ${(suggestionResult.channelAnalysis?.duplicates)||0}, failures ${(suggestionResult.channelAnalysis?.failures)||0}`);
+            } catch (error) {
+                console.error('AI channel suggestions failed:', error.message);
+                // Don't fail the entire job if suggestions fail
             }
             
             // Mark initial scrape as completed

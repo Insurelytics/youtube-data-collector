@@ -61,6 +61,7 @@ export default function ChannelDashboard() {
   const [pendingVideo, setPendingVideo] = useState<any | null>(null)
   const [addedVideos, setAddedVideos] = useState<Set<string>>(new Set());
   const [sheetUrl, setSheetUrl] = useState<string | null>(null);
+  
 
 
   // Update criteria when global criteria changes or on focus
@@ -197,6 +198,26 @@ export default function ChannelDashboard() {
     } finally {
       setAddingVideoId(null)
       setPendingVideo(null)
+    }
+  }
+
+  async function generateRecommendations() {
+    if (!channel) return;
+    try {
+      const res = await fetch(`/api/channels/${channel.id}/recommend`, { method: 'POST' });
+      let data: any = null;
+      try { data = await res.json(); } catch {}
+
+      if (!res.ok) {
+        const msg = data?.error || 'Failed to start recommendations';
+        toast({ title: 'Could not start', description: msg, variant: 'destructive' });
+        return;
+      }
+
+      const message = data?.message || 'Recommendation job started';
+      toast({ title: 'Generating recommendations…', description: message });
+    } catch (e: any) {
+      toast({ title: 'Network error', description: e?.message || 'Failed to start recommendations', variant: 'destructive' });
     }
   }
 
@@ -338,10 +359,15 @@ export default function ChannelDashboard() {
               <TabsTrigger value="recent">All Videos</TabsTrigger>
             </TabsList>
             
-            <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <Clock className="h-4 w-4" />
-              <span>Time Range: {TIME_RANGES.find(r => r.value === criteria.timeRange)?.label || 'All time'}</span>
-              <span className="text-xs">(set in global criteria)</span>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Clock className="h-4 w-4" />
+                <span>Time Range: {TIME_RANGES.find(r => r.value === criteria.timeRange)?.label || 'All time'}</span>
+                <span className="text-xs">(set in global criteria)</span>
+              </div>
+              <Button onClick={generateRecommendations} title="Generate Recommendations">
+                Generate Additional Recommendations
+              </Button>
             </div>
           </div>
 

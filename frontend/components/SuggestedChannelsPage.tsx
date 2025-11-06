@@ -34,6 +34,8 @@ export function SuggestedChannelsPage() {
   const [maxFollowers, setMaxFollowers] = useState<number>(1000000)
   const [tempMinFollowers, setTempMinFollowers] = useState<string>('1000')
   const [tempMaxFollowers, setTempMaxFollowers] = useState<string>('1000000')
+  const [isMinFocused, setIsMinFocused] = useState<boolean>(false)
+  const [isMaxFocused, setIsMaxFocused] = useState<boolean>(false)
 
   const fetchChannels = async () => {
     try {
@@ -110,6 +112,13 @@ export function SuggestedChannelsPage() {
     return num.toString()
   }
 
+  const formatCompactInt = (num: number) => {
+    if (Number.isNaN(num)) return '0'
+    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
+    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`
+    return String(num)
+  }
+
   const getInstagramUrl = (username: string) => `https://instagram.com/${username}`
 
   // Persist filters and refetch when they change
@@ -149,19 +158,25 @@ export function SuggestedChannelsPage() {
           <div className="flex flex-col">
             <label className="text-xs text-muted-foreground mb-1">Min followers</label>
             <Input
-              type="number"
+              type="text"
               className="w-36"
-              value={tempMinFollowers}
-              min={0}
+              value={isMinFocused ? tempMinFollowers : formatCompactInt(parseInt(tempMinFollowers || '0', 10))}
+              onFocus={() => setIsMinFocused(true)}
               onChange={(e) => setTempMinFollowers(e.target.value)}
               onBlur={() => {
                 const parsed = parseInt(tempMinFollowers, 10)
-                setMinFollowers(Number.isNaN(parsed) ? 0 : Math.max(0, parsed))
+                const normalized = Number.isNaN(parsed) ? 0 : Math.max(0, parsed)
+                setMinFollowers(normalized)
+                setTempMinFollowers(String(normalized))
+                setIsMinFocused(false)
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   const parsed = parseInt(tempMinFollowers, 10)
-                  setMinFollowers(Number.isNaN(parsed) ? 0 : Math.max(0, parsed))
+                  const normalized = Number.isNaN(parsed) ? 0 : Math.max(0, parsed)
+                  setMinFollowers(normalized)
+                  setTempMinFollowers(String(normalized))
+                  setIsMinFocused(false)
                 }
               }}
             />
@@ -169,19 +184,25 @@ export function SuggestedChannelsPage() {
           <div className="flex flex-col">
             <label className="text-xs text-muted-foreground mb-1">Max followers</label>
             <Input
-              type="number"
+              type="text"
               className="w-36"
-              value={tempMaxFollowers}
-              min={0}
+              value={isMaxFocused ? tempMaxFollowers : formatCompactInt(parseInt(tempMaxFollowers || '0', 10))}
+              onFocus={() => setIsMaxFocused(true)}
               onChange={(e) => setTempMaxFollowers(e.target.value)}
               onBlur={() => {
                 const parsed = parseInt(tempMaxFollowers, 10)
-                setMaxFollowers(Number.isNaN(parsed) ? 0 : Math.max(0, parsed))
+                const normalized = Number.isNaN(parsed) ? 0 : Math.max(0, parsed)
+                setMaxFollowers(normalized)
+                setTempMaxFollowers(String(normalized))
+                setIsMaxFocused(false)
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   const parsed = parseInt(tempMaxFollowers, 10)
-                  setMaxFollowers(Number.isNaN(parsed) ? 0 : Math.max(0, parsed))
+                  const normalized = Number.isNaN(parsed) ? 0 : Math.max(0, parsed)
+                  setMaxFollowers(normalized)
+                  setTempMaxFollowers(String(normalized))
+                  setIsMaxFocused(false)
                 }
               }}
             />

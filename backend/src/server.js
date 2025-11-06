@@ -92,6 +92,9 @@ async function createServer() {
   // Initialize queue manager
   const queueManager = new QueueManager();
 
+  // In-memory flag to prevent concurrent recommendation runs
+  let recommendationsRunning = false;
+
   // Initialize scheduler (disabled / not in use)
   // initScheduler();
 
@@ -411,6 +414,32 @@ async function createServer() {
     } catch (e) {
       console.error('Error in /api/channels GET:', e.message);
       res.json({ rows: listChannels() });
+    }
+  });
+
+  // Trigger AI recommendations for a specific channel (fire-and-forget with in-memory lock)
+  app.post('/api/channels/:id/recommend', async (req, res) => {
+    if (recommendationsRunning) {
+      console.log('Recommendation job already running for channel', req.params.id);
+      return res.status(409).json({ error: 'Recommendation job already running' });
+    }
+    console.log('Recommendation job started for channel', req.params.id);
+
+    const channelId = req.params.id;
+    if (!channelId) return res.status(400).json({ error: 'channelId required' });
+
+    recommendationsRunning = true;
+    // Respond immediately so the client connection isn't held open
+    res.json({ ok: true, message: 'Recommendation job started' });
+
+    try {
+      const { suggestChannels } = await import('./scraping/suggest-channels.js');
+      await suggestChannels(channelId);
+    } catch (e) {
+      console.error('Error generating recommendations (background):', e?.message || e);
+    } finally {
+      recommendationsRunning = false;
+      console.log('Recommendation job completed');
     }
   });
 

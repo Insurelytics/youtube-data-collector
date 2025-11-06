@@ -321,6 +321,8 @@ export function ChannelsPage() {
     }
   }
 
+  // moved to dashboard page
+
   async function addToSheet(channelId: string) {
     const ch = channels.find(c => c.id === channelId);
     if (!ch) return;
@@ -471,6 +473,7 @@ export function ChannelsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
+                  {/* Generate Recommendations button moved to channel dashboard */}
                   <Button
                     variant="ghost"
                     size="icon"

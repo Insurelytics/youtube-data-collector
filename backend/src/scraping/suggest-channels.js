@@ -1,159 +1,103 @@
-// suggest channels to scrape (supports ig only for now)
-import { getTopicGraph } from '../topics/topic-math.js';
-import { findChannelsForAllSearchTerms } from './channel-finder.js';
-import { getChannelByHandle } from './instagram.js';
+// suggest channels to scrape (Instagram-only, channel→channels)
 import { upsertSuggestedChannel } from '../database/index.js';
-import Instructor from "@instructor-ai/instructor";
-import OpenAI from "openai"
-import { z } from "zod"
-import dotenv from 'dotenv'
+import dotenv from 'dotenv';
 import { getDatabase } from '../database/connection.js';
-
-// this is the final step in the initial scrape process, and will search for channels that focus on similar topics to the ones in the database
-
-const TOPICS_TOFETCH = 50; // To generally increase the number of searches increase this number.  
-// This is not a 1:1 relationship but having more topics will trend towards more categories being found.
-
-const MAX_SEARCHES_PER_CATEGORY = 3; // Increasing this number increases cost and time taken.
-const CHANNELS_PER_SEARCH = 3; // Increasing this number increases cost and time taken.
-const TOTAL_MAX_SEARCHES = 20; // A failsafe to prevent huge numbers of searches.
+import { researchSimilarInstagramChannels } from './openAIResearch.js';
+import { getChannelByHandle } from './instagram.js';
 
 // Load environment variables
-dotenv.config()
+dotenv.config();
 
-const oai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY ?? undefined
-})
+const CHANNELS_TO_FIND = 5;
 
-const client = Instructor({
-  client: oai,
-  mode: "FUNCTIONS"
-})
-
-const SearchTermsSchema = z.object({
-    // searchFocus: z.array(z.string()).describe("The focus of each search. (e.g. ['For the first search, the focus is on topics like...', 'For the second search, I'll focus on topics like...', ...])"),
-    searchTerms: z.array(z.string()).describe("Searches to find accounts for the category.  Each search should be a simple list of strings (e.g. ['cats dogs birds', '...']). Fancy search capabilities like AND/OR/NOT and parentheses are not supported.  Ideally, use between 3 and 5 words per search."),
-});
-
-export async function suggestChannels() {
-    // get topics defined as categories by topic math
-    const { topics } = getTopicGraph(0, 1, TOPICS_TOFETCH); 
-    // Avoid circular structure error by logging only names
-    console.log('All topics:', topics.map(t => t.name));
-    const categories = topics.filter(topic => topic.isCategory);
-    console.log('Categories:', categories.map(t => t.name));
-    // Get all categories that have not had suggestions generated yet
-    const db = getDatabase();
-    const unsearchedCategories = db.prepare('SELECT id, name FROM topics WHERE suggested_channels_generated = 0').all();
-    console.log(unsearchedCategories);
-    const unsearchedCategoryNames = new Set(unsearchedCategories.map(row => row.name));
-    const categoriesToSearch = categories.filter(cat => unsearchedCategoryNames.has(cat.name));
-
-    // for each category, get the name, topics connected, and strength of those connections
-    const categoryData = categoriesToSearch.map(category => {
-        // Get the topic ID from the database since getTopicGraph doesn't include IDs
-        const topicFromDb = unsearchedCategories.find(row => row.name === category.name);
-        return {
-            id: topicFromDb ? topicFromDb.id : null,
-            name: category.name,
-            topics: category.connections.map(connection => ({
-                name: connection.topic.name,
-                strength: Number(connection.weight.toFixed(3))
-            })),
-        };
-    });
-
-    if (categoryData.length === 0) {
-        console.log('No new categories to search. Skipping suggested channel generation.');
-        return { urlDiscovery: null, channelAnalysis: null, totalFoundUrls: 0, totalStoredChannels: 0 };
-    }
-
-    // For each category, generate search terms, analyze/store channels, and mark as generated
-    for (const categoryObj of categoryData) {
-        const searchTerms = await generateSearchTerms([categoryObj]);
-        const urlResult = await findChannelsForAllSearchTerms(searchTerms, CHANNELS_PER_SEARCH);
-        await analyzeAndStoreChannels(urlResult.foundUrls, categoryObj.id);
-        // Mark this category as generated
-        db.prepare('UPDATE topics SET suggested_channels_generated = 1 WHERE id = ?').run(categoryObj.id);
-    }
-
-    return { urlDiscovery: null, channelAnalysis: null, totalFoundUrls: 0, totalStoredChannels: 0 };
+function extractInstagramUsername(link) {
+  if (!link) return null;
+  try {
+    // Normalize and extract handle from URLs like https://instagram.com/handle or https://www.instagram.com/handle/
+    const match = String(link).match(/instagram\.com\/(?!p\/)([A-Za-z0-9._]+)/i);
+    return match && match[1] ? match[1].toLowerCase() : null;
+  } catch {
+    return null;
+  }
 }
 
-async function analyzeAndStoreChannels(foundUrls, categoryId) {
-    console.log(`Analyzing ${foundUrls.length} channel URLs...`);
-    
-    const analyzedChannels = [];
-    let successCount = 0;
-    let errorCount = 0;
-    
-    for (const urlData of foundUrls) {
-        try {
-            console.log(`Analyzing channel: ${urlData.url}`);
-            
-            // Use existing channel analysis to get full channel data
-            const channelInfo = await getChannelByHandle({ handle: urlData.username });
-            
-            // Create channel data for suggested channels table
-            const suggestedChannelData = {
-                id: `ig_${urlData.username}`,
-                username: urlData.username,
-                fullName: channelInfo.channelTitle || null,
-                followersCount: channelInfo.subscriberCount || null,
-                followsCount: channelInfo.profileData?.followsCount || null,
-                postsCount: channelInfo.profileData?.postsCount || null,
-                verified: channelInfo.profileData?.verified ? 1 : 0,
-                isPrivate: 0, // If we got channel info, it's not private
-                biography: channelInfo.profileData?.biography || null,
-                externalUrl: Array.isArray(channelInfo.profileData?.externalUrls) && channelInfo.profileData.externalUrls.length > 0 ? channelInfo.profileData.externalUrls[0].url : null,
-                profilePicUrl: channelInfo.thumbnailUrl || null,
-                localProfilePicPath: channelInfo.thumbnailUrl?.startsWith('/api/images/') ? channelInfo.thumbnailUrl : null,
-                searchTerm: urlData.searchTerm,
-                platform: 'instagram',
-                categoryId: categoryId
-            };
-            
-            // Store in suggested channels database
-            upsertSuggestedChannel(suggestedChannelData);
-            analyzedChannels.push(suggestedChannelData);
-            successCount++;
-            
-            console.log(`Successfully analyzed and stored: ${urlData.username}`);
-            
-            // Add small delay to be respectful to the API
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-        } catch (error) {
-            console.error(`Failed to analyze channel ${urlData.url}:`, error.message);
-            errorCount++;
-        }
-    }
-    
-    console.log(`Channel analysis completed. ${successCount} successful, ${errorCount} failed.`);
-    
-    return {
-        analyzedChannels,
-        successCount,
-        errorCount,
-        totalUrls: foundUrls.length
-    };
-}
+export async function suggestChannels(channelId) {
+  const db = getDatabase();
 
-async function generateSearchTerms(categoryData) {
-    let searchTerms = [];
-    for (const category of categoryData) {
-        let userPrompt = `Given this category data in my scraping system, suggest exactly ${MAX_SEARCHES_PER_CATEGORY} searches that will find similar accounts and channels. The array must be exactly ${MAX_SEARCHES_PER_CATEGORY} long. Category data: ${JSON.stringify(category)}`
-        console.log(userPrompt);
-        const result = await client.chat.completions.create({
-            model: "gpt-4.1-mini",
-            messages: [{ role: "user", content: userPrompt }],
-            response_model: {
-                schema: SearchTermsSchema,
-                name: "SearchTerms"
-            }
-        });
-        searchTerms.push(...result.searchTerms);
-        console.log(result);
+  // Fetch 3 similar channels via AI research with simple retries
+  const maxRetries = Number(process.env.AI_SUGGESTIONS_MAX_RETRIES || 2);
+  let result = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      result = await researchSimilarInstagramChannels(channelId, CHANNELS_TO_FIND);
+      break;
+    } catch (e) {
+      if (attempt === maxRetries) throw e;
+      const backoff = 500 * Math.pow(2, attempt);
+      await new Promise(r => setTimeout(r, backoff));
     }
-    return searchTerms;
-}  
+  }
+  const channels = Array.isArray(result?.channels) ? result.channels : [];
+
+  let stored = 0;
+  let duplicates = 0;
+  let failures = 0;
+
+  for (const ch of channels) {
+    const username = extractInstagramUsername(ch.link);
+    if (!username) {
+      failures++;
+      continue;
+    }
+
+    // Idempotency: skip if platform+username already suggested
+    const exists = db.prepare(
+      `SELECT 1 FROM suggested_channels WHERE platform = ? AND username = ? LIMIT 1`
+    ).get('instagram', username);
+
+    if (exists) {
+      duplicates++;
+      continue;
+    }
+
+    try {
+      // Enrich with live profile data to align with old flow (ensures followersCount, etc.)
+      const profile = await getChannelByHandle({ handle: username });
+
+      const suggestedChannelData = {
+        id: `ig_${username}`,
+        username,
+        fullName: profile?.channelTitle || ch.name || null,
+        followersCount: profile?.subscriberCount ?? null,
+        followsCount: profile?.profileData?.followsCount ?? null,
+        postsCount: profile?.profileData?.postsCount ?? null,
+        verified: profile?.profileData?.verified ? 1 : 0,
+        isPrivate: 0,
+        biography: profile?.profileData?.biography || ch.bio || null,
+        externalUrl: Array.isArray(profile?.profileData?.externalUrls) && profile.profileData.externalUrls.length > 0
+          ? profile.profileData.externalUrls[0].url
+          : (ch.link || null),
+        profilePicUrl: profile?.thumbnailUrl || null,
+        localProfilePicPath: profile?.thumbnailUrl?.startsWith('/api/images/') ? profile.thumbnailUrl : null,
+        searchTerm: `src:${channelId}`,
+        platform: 'instagram',
+        categoryId: null
+      };
+
+      upsertSuggestedChannel(suggestedChannelData);
+      stored++;
+      // brief pause to be polite to upstream API
+      await new Promise(r => setTimeout(r, 250));
+    } catch (e) {
+      console.error('Failed to upsert suggested channel', username, e?.message || e);
+      failures++;
+    }
+  }
+
+  return {
+    urlDiscovery: null,
+    channelAnalysis: { stored, duplicates, failures, total: channels.length },
+    totalFoundUrls: channels.length,
+    totalStoredChannels: stored
+  };
+}

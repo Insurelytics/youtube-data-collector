@@ -36,6 +36,7 @@ export function SuggestedChannelsPage() {
   const [tempMaxFollowers, setTempMaxFollowers] = useState<string>('1000000')
   const [isMinFocused, setIsMinFocused] = useState<boolean>(false)
   const [isMaxFocused, setIsMaxFocused] = useState<boolean>(false)
+  const [totalCount, setTotalCount] = useState<number | null>(null)
 
   const fetchChannels = async () => {
     try {
@@ -52,6 +53,23 @@ export function SuggestedChannelsPage() {
       setError(err instanceof Error ? err.message : 'Failed to fetch channels')
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Fetch total unfiltered count once to compute excluded-by-filter
+  const fetchTotalCount = async () => {
+    try {
+      const params = new URLSearchParams({
+        minFollowers: '0',
+        maxFollowers: '1000000000'
+      })
+      const response = await fetch(`/api/suggested-channels?${params.toString()}`)
+      if (!response.ok) throw new Error('Failed to fetch total suggested channels')
+      const data = await response.json()
+      setTotalCount(Array.isArray(data) ? data.length : 0)
+    } catch (_) {
+      // ignore total count errors; UI will simply hide excluded info
+      setTotalCount(null)
     }
   }
 
@@ -134,6 +152,7 @@ export function SuggestedChannelsPage() {
   // Initial fetch
   useEffect(() => {
     fetchChannels()
+    fetchTotalCount()
   }, [])
 
   if (loading) {
@@ -152,6 +171,14 @@ export function SuggestedChannelsPage() {
           <h2 className="text-2xl font-bold">Suggested Channels</h2>
           <p className="text-muted-foreground">
             Channels found based on your tracked content topics
+          </p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Showing {channels.length}
+            {totalCount !== null && (
+              <>
+                {' '}of {totalCount} • Excluded {Math.max(0, totalCount - channels.length)} by filters
+              </>
+            )}
           </p>
         </div>
         <div className="flex items-end gap-2">

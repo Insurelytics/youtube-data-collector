@@ -37,6 +37,7 @@ export function SuggestedChannelsPage() {
   const [isMinFocused, setIsMinFocused] = useState<boolean>(false)
   const [isMaxFocused, setIsMaxFocused] = useState<boolean>(false)
   const [totalCount, setTotalCount] = useState<number | null>(null)
+  const [hasLoadedFilters, setHasLoadedFilters] = useState<boolean>(false)
 
   const fetchChannels = async () => {
     try {
@@ -87,6 +88,7 @@ export function SuggestedChannelsPage() {
       if (!Number.isNaN(parsed)) setMaxFollowers(parsed)
       if (!Number.isNaN(parsed)) setTempMaxFollowers(String(parsed))
     }
+    setHasLoadedFilters(true)
   }, [])
 
   const addChannelToTracking = async (channel: SuggestedChannel) => {
@@ -141,13 +143,14 @@ export function SuggestedChannelsPage() {
 
   // Persist filters and refetch when they change
   useEffect(() => {
+    if (!hasLoadedFilters) return
     if (typeof window !== 'undefined') {
       window.localStorage.setItem('suggestedChannels:minFollowers', String(minFollowers))
       window.localStorage.setItem('suggestedChannels:maxFollowers', String(maxFollowers))
     }
     setLoading(true)
     fetchChannels()
-  }, [minFollowers, maxFollowers])
+  }, [minFollowers, maxFollowers, hasLoadedFilters])
 
   // Initial fetch
   useEffect(() => {
